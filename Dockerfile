@@ -1,8 +1,10 @@
 # ---------- build ----------
 FROM node:20-alpine AS build
 WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm ci --no-audit --no-fund
+COPY package.json pnpm-lock.yaml ./
+RUN corepack enable \
+  && corepack prepare pnpm@10.30.3 --activate \
+  && pnpm install --frozen-lockfile
 COPY . .
 RUN npm run build
 
@@ -24,4 +26,4 @@ EXPOSE 3000
 # 1) apply DB migrations (idempotent)
 # 2) seed demo data (no-op if users already exist; set SEED_DEMO_PASSWORD to change demo password)
 # 3) start server
-CMD ["sh", "-c", "npx drizzle-kit migrate && (npx tsx db/seed.ts || true) && node dist/boot.js"]
+CMD ["sh", "-c", "./node_modules/.bin/drizzle-kit migrate && (./node_modules/.bin/tsx db/seed.ts || true) && node dist/boot.js"]

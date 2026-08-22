@@ -27,7 +27,8 @@ services:
       APP_ID: ${APP_ID:-yabolshe}
       APP_SECRET: ${APP_SECRET:?Set APP_SECRET in .env}
       DATABASE_URL: mysql://yabolshe:${DB_PASSWORD:?Set DB_PASSWORD in .env}@db:3306/yabolshe
-      OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY in .env}
+      # Optional for local/demo mode. Set a real key only on the production server.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5}
       WHISPER_MODEL: ${WHISPER_MODEL:-whisper-1}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-25}

@@ -17,10 +17,7 @@ import {
 } from "./schema";
 
 // Demo data is 100% synthetic. No real PHI.
-// Demo accounts (change passwords after first login!):
-//   therapist: anna@yabolshe.demo / demo1234
-//   client:    maria@yabolshe.demo / demo1234
-//   admin:     admin@yabolshe.demo / demo1234
+// Demo accounts use the password from SEED_DEMO_PASSWORD.
 
 async function seed() {
   const db = getDb();
@@ -32,7 +29,8 @@ async function seed() {
 
   console.log("Seeding demo data (synthetic)...");
 
-  const demoHash = await hashPassword(process.env.SEED_DEMO_PASSWORD ?? "demo1234");
+  const demoPassword = process.env.SEED_DEMO_PASSWORD ?? "demo1234";
+  const demoHash = await hashPassword(demoPassword);
 
   // ---- users ----
   const [{ id: therapistId }] = await db
@@ -294,7 +292,7 @@ async function seed() {
   });
 
   console.log("Seed complete.");
-  console.log("Demo accounts: anna@yabolshe.demo / maria@yabolshe.demo / admin@yabolshe.demo — password: demo1234");
+  console.log("Demo accounts created; password is the value of SEED_DEMO_PASSWORD.");
   console.log("Invite code for new clients: DEMO2026");
   console.log("Admin id:", adminId);
   process.exit(0);

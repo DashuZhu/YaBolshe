@@ -4,6 +4,7 @@
 !Dockerfile
 !package.json
 !package-lock.json
+!pnpm-lock.yaml
 !components.json
 !drizzle.config.ts
 !eslint.config.js
@@ -32,4 +33,3 @@
 **/dist
 **/*.log
 **/*.tsbuildinfo
-
