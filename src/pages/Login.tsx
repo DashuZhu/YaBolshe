@@ -1,24 +1,32 @@
 import { useState } from 'react'
-import { useNavigate, Link } from 'react-router'
+import { useNavigate, Link, useSearchParams } from 'react-router'
 import { Heart, ArrowLeft, Loader2, KeyRound, Mail, UserRound, Ticket } from 'lucide-react'
 import { Logo, Blobs, GlassCard } from '@/components/brand'
 import { trpc, useApp } from '@/lib/store'
 import { cn } from '@/lib/utils'
+import { friendlyApiError } from '@/lib/errors'
 
-type Mode = 'login' | 'therapist' | 'client'
+type Mode = 'login' | 'invited' | 'client'
 
 const inputCls =
   'w-full rounded-2xl border border-brand-softpink/60 bg-white/80 px-4 py-3 text-sm text-brand-ink outline-none placeholder:text-brand-mute/60 focus:ring-2 focus:ring-brand-lav'
 
 export default function Login() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { refreshAll } = useApp()
-  const [mode, setMode] = useState<Mode>('login')
+  const initialInvite = searchParams.get('invite')?.trim().toUpperCase() ?? ''
+  const initialMode: Mode = searchParams.get('mode') === 'client'
+    ? 'client'
+    : initialInvite
+      ? 'invited'
+      : 'login'
+  const [mode, setMode] = useState<Mode>(initialMode)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
   const [form, setForm] = useState({
-    email: '', password: '', firstName: '', lastName: '', inviteCode: '', aiConsent: false,
+    email: '', password: '', firstName: '', lastName: '', inviteCode: initialInvite, aiConsent: false,
   })
 
   const utils = trpc.useUtils()
@@ -30,15 +38,15 @@ export default function Login() {
 
   const loginMut = trpc.auth.login.useMutation({
     onSuccess: (u) => go(u.role),
-    onError: (e) => { setError(e.message); setBusy(false) },
+    onError: (e) => { setError(friendlyApiError(e.message)); setBusy(false) },
   })
-  const regTMut = trpc.auth.registerTherapist.useMutation({
+  const regInvitedMut = trpc.auth.registerInvited.useMutation({
     onSuccess: (u) => go(u.role),
-    onError: (e) => { setError(e.message); setBusy(false) },
+    onError: (e) => { setError(friendlyApiError(e.message)); setBusy(false) },
   })
   const regCMut = trpc.auth.registerClient.useMutation({
     onSuccess: (u) => go(u.role),
-    onError: (e) => { setError(e.message); setBusy(false) },
+    onError: (e) => { setError(friendlyApiError(e.message)); setBusy(false) },
   })
 
   const submit = () => {
@@ -46,8 +54,11 @@ export default function Login() {
     setBusy(true)
     const email = form.email.trim()
     if (mode === 'login') loginMut.mutate({ email, password: form.password })
-    if (mode === 'therapist')
-      regTMut.mutate({ email, password: form.password, firstName: form.firstName, lastName: form.lastName })
+    if (mode === 'invited')
+      regInvitedMut.mutate({
+        inviteCode: form.inviteCode, email, password: form.password,
+        firstName: form.firstName, lastName: form.lastName,
+      })
     if (mode === 'client')
       regCMut.mutate({
         inviteCode: form.inviteCode, email, password: form.password,
@@ -74,21 +85,21 @@ export default function Login() {
             <Heart className="h-7 w-7 fill-white/90" />
           </span>
           <h1 className="text-2xl font-extrabold text-brand-deep">
-            {mode === 'login' ? 'С возвращением' : mode === 'therapist' ? 'Регистрация терапевта' : 'Вход по приглашению'}
+            {mode === 'login' ? 'С возвращением' : mode === 'invited' ? 'Регистрация по приглашению' : 'Кабинет клиента'}
           </h1>
           <p className="mt-2 text-sm text-brand-mute">
             {mode === 'login'
-              ? 'Демо: anna@yabolshe.demo · maria@yabolshe.demo · admin@yabolshe.demo — пароль demo1234'
-              : mode === 'therapist'
-                ? 'Создайте кабинет и приглашайте клиентов кодом'
-                : 'Терапевт дал вам код приглашения? Введите его здесь'}
+              ? 'Введите почту и пароль от вашего кабинета'
+              : mode === 'invited'
+                ? 'Код приглашения определит вашу роль и доступ'
+                : 'Регистрация клиента доступна только по приглашению его терапевта'}
           </p>
         </div>
 
         <div className="mb-5 flex rounded-2xl bg-white/70 p-1.5 shadow-soft">
           {([
             ['login', 'Вход', KeyRound],
-            ['therapist', 'Я терапевт', UserRound],
+            ['invited', 'По приглашению', UserRound],
             ['client', 'Я клиент', Ticket],
           ] as const).map(([m, label, Icon]) => (
             <button
@@ -106,8 +117,8 @@ export default function Login() {
 
         <GlassCard deep>
           <div className="space-y-3.5">
-            {mode === 'client' && (
-              <input className={inputCls} placeholder="Код приглашения (например, DEMO2026)" value={form.inviteCode} onChange={set('inviteCode')} />
+            {mode !== 'login' && (
+              <input className={inputCls} placeholder="Код приглашения" value={form.inviteCode} onChange={set('inviteCode')} />
             )}
             {mode !== 'login' && (
               <div className="flex gap-3">

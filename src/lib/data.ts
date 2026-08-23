@@ -2,7 +2,7 @@
 // «Я Больше!» — demo data layer (fully synthetic, no real PHI)
 // ============================================================
 
-export type Role = 'therapist' | 'client' | 'admin'
+export type Role = 'therapist' | 'client' | 'admin' | 'owner'
 
 export type SessionStatus =
   | 'uploaded'

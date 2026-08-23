@@ -20,7 +20,7 @@ export const users = mysqlTable("users", {
   id: serial("id").primaryKey(),
   email: varchar("email", { length: 320 }).notNull().unique(),
   passwordHash: varchar("password_hash", { length: 255 }).notNull(),
-  role: mysqlEnum("role", ["therapist", "client", "admin"]).notNull(),
+  role: mysqlEnum("role", ["therapist", "client", "admin", "owner"]).notNull(),
   firstName: varchar("first_name", { length: 120 }).notNull(),
   lastName: varchar("last_name", { length: 120 }).notNull().default(""),
   timezone: varchar("timezone", { length: 64 }).notNull().default("Europe/Moscow"),
@@ -45,6 +45,31 @@ export const therapistProfiles = mysqlTable("therapist_profiles", {
   maxActiveClients: int("max_active_clients").notNull().default(20),
   monthlySessionLimit: int("monthly_session_limit").notNull().default(80),
   monthlyHoursLimit: float("monthly_hours_limit").notNull().default(120),
+  plan: mysqlEnum("plan", ["free", "pro"]).notNull().default("free"),
+  subscriptionStatus: mysqlEnum("subscription_status", [
+    "active",
+    "trialing",
+    "past_due",
+    "cancelled",
+  ])
+    .notNull()
+    .default("active"),
+  subscriptionEndsAt: timestamp("subscription_ends_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Invitations for platform-level accounts. Today owner/admin issue free
+// invitations manually; later payment can create the same invitation with a
+// paid plan without changing the registration flow.
+export const accountInvites = mysqlTable("account_invites", {
+  id: serial("id").primaryKey(),
+  code: varchar("code", { length: 64 }).notNull().unique(),
+  email: varchar("email", { length: 320 }).notNull(),
+  role: mysqlEnum("role", ["therapist", "admin", "owner"]).notNull().default("therapist"),
+  plan: mysqlEnum("plan", ["free", "pro"]).notNull().default("free"),
+  invitedByUserId: bigint("invited_by_user_id", { mode: "number", unsigned: true }).notNull(),
+  usedByUserId: bigint("used_by_user_id", { mode: "number", unsigned: true }),
+  expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -63,6 +88,7 @@ export const invites = mysqlTable("invites", {
   id: serial("id").primaryKey(),
   code: varchar("code", { length: 32 }).notNull().unique(),
   therapistId: bigint("therapist_id", { mode: "number", unsigned: true }).notNull(),
+  email: varchar("email", { length: 320 }),
   focus: varchar("focus", { length: 255 }).notNull().default(""),
   usedByUserId: bigint("used_by_user_id", { mode: "number", unsigned: true }),
   expiresAt: timestamp("expires_at").notNull(),
@@ -249,6 +275,7 @@ export const tokenUsage = mysqlTable("token_usage", {
 export type User = typeof users.$inferSelect;
 export type AuthSession = typeof authSessions.$inferSelect;
 export type TherapistProfile = typeof therapistProfiles.$inferSelect;
+export type AccountInvite = typeof accountInvites.$inferSelect;
 export type ClientProfile = typeof clientProfiles.$inferSelect;
 export type Invite = typeof invites.$inferSelect;
 export type SessionRow = typeof sessions.$inferSelect;

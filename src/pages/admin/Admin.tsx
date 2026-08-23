@@ -2,12 +2,15 @@ import { useState } from 'react'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
-import { Users, Coins, Gauge, ScrollText, Server, AlertTriangle } from 'lucide-react'
+import {
+  Users, Coins, Gauge, ScrollText, Server, AlertTriangle, UserPlus, Copy, Check,
+} from 'lucide-react'
 import { AppShell } from '@/components/shell'
 import { GlassCard, SectionHeader } from '@/components/brand'
 import { Pill } from '@/components/widgets'
-import { trpc } from '@/lib/store'
+import { trpc, useApp } from '@/lib/store'
 import { cn } from '@/lib/utils'
+import { friendlyApiError } from '@/lib/errors'
 
 const tabs = [
   { key: 'users', label: 'Пользователи', icon: Users },
@@ -18,13 +21,37 @@ const tabs = [
 ] as const
 
 export default function Admin() {
+  const { me } = useApp()
   const [tab, setTab] = useState<string>('users')
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState<'therapist' | 'admin' | 'owner'>('therapist')
+  const [invitePlan, setInvitePlan] = useState<'free' | 'pro'>('free')
+  const [inviteResult, setInviteResult] = useState<{ code: string; email: string; expiresAt: string } | null>(null)
+  const [copied, setCopied] = useState(false)
   const usersQ = trpc.admin.users.useQuery()
   const usageQ = trpc.admin.usage.useQuery()
   const auditQ = trpc.admin.audit.useQuery()
   const pingQ = trpc.ping.useQuery()
+  const inviteMut = trpc.admin.createAccountInvite.useMutation({
+    onSuccess: (result) => {
+      setInviteResult(result)
+      setInviteEmail('')
+      void usersQ.refetch()
+    },
+  })
 
   const usage = usageQ.data
+  const hasOwner = (usersQ.data ?? []).some((user) => user.roleKey === 'owner')
+  const registrationUrl = inviteResult
+    ? `${window.location.origin}/login?mode=invited&invite=${encodeURIComponent(inviteResult.code)}`
+    : ''
+
+  const copyInvite = async () => {
+    if (!registrationUrl) return
+    await navigator.clipboard.writeText(registrationUrl)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
 
   return (
     <AppShell role="admin">
@@ -50,8 +77,73 @@ export default function Admin() {
 
       {/* Users */}
       {tab === 'users' && (
-        <GlassCard>
-          <SectionHeader title="Пользователи системы" />
+        <div className="grid gap-5">
+          <GlassCard>
+            <SectionHeader
+              title="Пригласить пользователя"
+              subtitle="Ссылка одноразовая, действует 7 дней и привязана к указанной почте"
+            />
+            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_150px_auto]">
+              <input
+                type="email"
+                value={inviteEmail}
+                onChange={(event) => setInviteEmail(event.target.value)}
+                placeholder="email@example.com"
+                className="rounded-2xl border border-brand-softpink/60 bg-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-brand-lav"
+              />
+              <select
+                value={inviteRole}
+                onChange={(event) => setInviteRole(event.target.value as typeof inviteRole)}
+                className="rounded-2xl border border-brand-softpink/60 bg-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-brand-lav"
+              >
+                <option value="therapist">Терапевт</option>
+                {me?.role === 'owner' && <option value="admin">Администратор</option>}
+                {(me?.role === 'owner' || !hasOwner) && <option value="owner">Владелец</option>}
+              </select>
+              <select
+                value={invitePlan}
+                disabled={inviteRole !== 'therapist'}
+                onChange={(event) => setInvitePlan(event.target.value as typeof invitePlan)}
+                className="rounded-2xl border border-brand-softpink/60 bg-white/80 px-4 py-3 text-sm outline-none disabled:opacity-50"
+              >
+                <option value="free">Бесплатно</option>
+                <option value="pro">Pro</option>
+              </select>
+              <button
+                onClick={() => {
+                  setInviteResult(null)
+                  inviteMut.mutate({ email: inviteEmail.trim(), role: inviteRole, plan: invitePlan })
+                }}
+                disabled={inviteMut.isPending || !inviteEmail.trim()}
+                className="btn-3d flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-bold text-white disabled:opacity-50"
+              >
+                <UserPlus className="h-4 w-4" />
+                Пригласить
+              </button>
+            </div>
+            {inviteMut.error && (
+              <p className="mt-3 rounded-2xl bg-brand-danger/10 px-4 py-3 text-sm font-semibold text-red-700">
+                {friendlyApiError(inviteMut.error.message)}
+              </p>
+            )}
+            {inviteResult && (
+              <div className="mt-4 rounded-2xl bg-brand-lav/15 p-4">
+                <p className="text-sm font-bold text-brand-ink">Приглашение для {inviteResult.email} готово</p>
+                <p className="mt-1 break-all text-xs text-brand-mute">{registrationUrl}</p>
+                <button
+                  onClick={copyInvite}
+                  className="btn-soft mt-3 flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold text-brand-deep"
+                >
+                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  {copied ? 'Скопировано' : 'Скопировать ссылку'}
+                </button>
+                <p className="mt-2 text-xs text-brand-mute">Действует до {inviteResult.expiresAt}</p>
+              </div>
+            )}
+          </GlassCard>
+
+          <GlassCard>
+            <SectionHeader title="Пользователи системы" />
           <div className="overflow-x-auto">
             <table className="w-full min-w-[680px] text-sm">
               <thead>
@@ -60,6 +152,7 @@ export default function Admin() {
                   <th className="pb-3 pr-4 font-bold">Email</th>
                   <th className="pb-3 pr-4 font-bold">Роль</th>
                   <th className="pb-3 pr-4 font-bold">Клиенты</th>
+                  <th className="pb-3 pr-4 font-bold">Тариф</th>
                   <th className="pb-3 pr-4 font-bold">Сессий в месяц</th>
                   <th className="pb-3 font-bold">Статус</th>
                 </tr>
@@ -71,6 +164,7 @@ export default function Admin() {
                     <td className="py-3.5 pr-4 text-brand-mute">{u.email}</td>
                     <td className="py-3.5 pr-4 text-brand-mute">{u.role}</td>
                     <td className="py-3.5 pr-4 text-brand-mute">{u.clients}</td>
+                    <td className="py-3.5 pr-4 text-brand-mute">{u.plan}</td>
                     <td className="py-3.5 pr-4 text-brand-mute">{u.monthSessions}</td>
                     <td className="py-3.5">
                       {u.status === 'blocked' ? (
@@ -84,7 +178,8 @@ export default function Admin() {
               </tbody>
             </table>
           </div>
-        </GlassCard>
+          </GlassCard>
+        </div>
       )}
 
       {/* Token usage */}

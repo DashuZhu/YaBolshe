@@ -3,7 +3,13 @@ import { trpc } from '@/providers/trpc'
 
 // Real API-backed app state. All data comes from the server via tRPC.
 
-type Me = { id: number; email: string; role: 'therapist' | 'client' | 'admin'; firstName: string; lastName: string }
+type Me = {
+  id: number
+  email: string
+  role: 'therapist' | 'client' | 'admin' | 'owner'
+  firstName: string
+  lastName: string
+}
 
 interface AppState {
   me: Me | null | undefined // undefined = loading

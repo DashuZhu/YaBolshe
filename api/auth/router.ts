@@ -1,9 +1,15 @@
 import { z } from "zod";
-import { eq, and, isNull, gt } from "drizzle-orm";
+import { eq, and, isNull, gt, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, publicQuery, authedQuery } from "../middleware";
 import { getDb } from "../queries/connection";
-import { users, invites, therapistProfiles, clientProfiles } from "@db/schema";
+import {
+  users,
+  invites,
+  accountInvites,
+  therapistProfiles,
+  clientProfiles,
+} from "@db/schema";
 import {
   hashPassword,
   verifyPassword,
@@ -31,9 +37,10 @@ function publicUser(u: typeof users.$inferSelect) {
 export const authRouter = createRouter({
   me: publicQuery.query(({ ctx }) => (ctx.user ? publicUser(ctx.user) : null)),
 
-  registerTherapist: publicQuery
+  registerInvited: publicQuery
     .input(
       z.object({
+        inviteCode: z.string().min(8, "Укажите код приглашения"),
         email: z.string().email("Некорректный email"),
         password: passwordSchema,
         firstName: z.string().min(1, "Укажите имя").max(120),
@@ -43,6 +50,20 @@ export const authRouter = createRouter({
     .mutation(async ({ input, ctx }) => {
       const db = getDb();
       const email = input.email.toLowerCase().trim();
+      const invite = await db.query.accountInvites.findFirst({
+        where: and(
+          eq(accountInvites.code, input.inviteCode.trim().toUpperCase()),
+          eq(accountInvites.email, email),
+          isNull(accountInvites.usedByUserId),
+          gt(accountInvites.expiresAt, new Date()),
+        ),
+      });
+      if (!invite) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Приглашение не найдено, уже использовано или выдано на другую почту",
+        });
+      }
       const existing = await db.query.users.findFirst({ where: eq(users.email, email) });
       if (existing) {
         throw new TRPCError({ code: "CONFLICT", message: "Пользователь с таким email уже есть" });
@@ -52,13 +73,30 @@ export const authRouter = createRouter({
         .values({
           email,
           passwordHash: await hashPassword(input.password),
-          role: "therapist",
+          role: invite.role,
           firstName: input.firstName.trim(),
           lastName: input.lastName.trim(),
         })
         .$returningId();
-      await db.insert(therapistProfiles).values({ userId: id });
-      await logAudit(id, `${input.firstName} ${input.lastName}`, "auth.register_therapist", "user", String(id));
+      if (invite.role === "therapist") {
+        await db.insert(therapistProfiles).values({
+          userId: id,
+          plan: invite.plan,
+          subscriptionStatus: "active",
+        });
+      }
+      await db
+        .update(accountInvites)
+        .set({ usedByUserId: id })
+        .where(and(eq(accountInvites.id, invite.id), isNull(accountInvites.usedByUserId)));
+      await logAudit(
+        id,
+        `${input.firstName} ${input.lastName}`,
+        "auth.register_invited",
+        "user",
+        String(id),
+        { role: invite.role, plan: invite.plan },
+      );
       const token = await createSession(id, ctx.req.headers.get("user-agent") ?? undefined);
       ctx.resHeaders.append("set-cookie", sessionCookieHeader(token, 14 * 24 * 3600));
       const user = await db.query.users.findFirst({ where: eq(users.id, id) });
@@ -84,6 +122,7 @@ export const authRouter = createRouter({
       const invite = await db.query.invites.findFirst({
         where: and(
           eq(invites.code, input.inviteCode.trim().toUpperCase()),
+          or(isNull(invites.email), eq(invites.email, email)),
           isNull(invites.usedByUserId),
           gt(invites.expiresAt, new Date()),
         ),
@@ -124,7 +163,12 @@ export const authRouter = createRouter({
     }),
 
   login: publicQuery
-    .input(z.object({ email: z.string().email(), password: z.string().min(1, "Введите пароль") }))
+    .input(
+      z.object({
+        email: z.string().email("Введите корректную почту"),
+        password: z.string().min(1, "Введите пароль"),
+      }),
+    )
     .mutation(async ({ input, ctx }) => {
       const db = getDb();
       const email = input.email.toLowerCase().trim();

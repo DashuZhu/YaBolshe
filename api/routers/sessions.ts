@@ -8,13 +8,24 @@ import { serializeSession, type TranscriptSegmentDTO } from "../queries/serializ
 import { logAudit } from "../queries/audit";
 import { processSession } from "../ai/pipeline";
 
-async function loadSessionWithMaterials(sessionId: number) {
+async function loadSessionWithMaterials(sessionId: number, clientView = false) {
   const db = getDb();
   const session = await db.query.sessions.findFirst({ where: eq(sessions.id, sessionId) });
   if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "Сессия не найдена" });
   const ii = await db.select().from(insights).where(eq(insights.sessionId, sessionId));
   const tt = await db.select().from(themes).where(eq(themes.sessionId, sessionId));
-  return serializeSession(session, ii, tt);
+  const dto = serializeSession(
+    session,
+    clientView ? ii.filter((item) => item.approved) : ii,
+    clientView ? tt.filter((item) => item.approved) : tt,
+  );
+  if (clientView) {
+    dto.transcript = [];
+    dto.riskFlags = [];
+    dto.therapistQuestions = [];
+    dto.uncertainties = [];
+  }
+  return dto;
 }
 
 async function assertTherapistOwns(userId: number, sessionId: number) {
@@ -52,7 +63,10 @@ export const sessionsRouter = createRouter({
         .where(eq(sessions.therapistId, ctx.user.id))
         .orderBy(desc(sessions.sessionDate));
     } else {
-      rows = await db.select().from(sessions).orderBy(desc(sessions.sessionDate)).limit(100);
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "Администрация не имеет доступа к содержанию терапевтических сессий",
+      });
     }
     if (rows.length === 0) return [];
     const ids = rows.map((r) => r.id);
@@ -93,7 +107,13 @@ export const sessionsRouter = createRouter({
           throw new TRPCError({ code: "FORBIDDEN", message: "Материалы этой сессии вам ещё не отправлены" });
         }
       }
-      return loadSessionWithMaterials(input.id);
+      if (ctx.user.role !== "therapist" && ctx.user.role !== "client") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Администрация не имеет доступа к содержанию терапевтических сессий",
+        });
+      }
+      return loadSessionWithMaterials(input.id, ctx.user.role === "client");
     }),
 
   createManual: therapistQuery

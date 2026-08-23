@@ -52,7 +52,10 @@ async function visibleClientIds(ctxUser: { id: number; role: string }, clientId?
       .where(eq(clientProfiles.therapistId, ctxUser.id));
     return rows.map((r) => r.id);
   }
-  return clientId ? [clientId] : [];
+  throw new TRPCError({
+    code: "FORBIDDEN",
+    message: "Администрация не имеет доступа к терапевтическим материалам",
+  });
 }
 
 export const homeworkRouter = createRouter({

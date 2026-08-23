@@ -16,7 +16,7 @@ const requireAuth = t.middleware(({ ctx, next }) => {
   return next({ ctx: { ...ctx, user: ctx.user } });
 });
 
-const requireRole = (roles: Array<"therapist" | "client" | "admin">) =>
+const requireRole = (roles: Array<"therapist" | "client" | "admin" | "owner">) =>
   t.middleware(({ ctx, next }) => {
     if (!ctx.user) {
       throw new TRPCError({ code: "UNAUTHORIZED", message: "Требуется вход в систему" });
@@ -28,6 +28,7 @@ const requireRole = (roles: Array<"therapist" | "client" | "admin">) =>
   });
 
 export const authedQuery = t.procedure.use(requireAuth);
-export const therapistQuery = t.procedure.use(requireRole(["therapist", "admin"]));
+export const therapistQuery = t.procedure.use(requireRole(["therapist"]));
 export const clientQuery = t.procedure.use(requireRole(["client"]));
-export const adminQuery = t.procedure.use(requireRole(["admin"]));
+export const adminQuery = t.procedure.use(requireRole(["admin", "owner"]));
+export const ownerQuery = t.procedure.use(requireRole(["owner"]));

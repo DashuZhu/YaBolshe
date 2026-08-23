@@ -6,13 +6,15 @@ import { GlassCard, Avatar } from '@/components/brand'
 import { Pill } from '@/components/widgets'
 import { useClients, useTherapistStats, trpc } from '@/lib/store'
 import { cn } from '@/lib/utils'
+import { friendlyApiError } from '@/lib/errors'
 
 export default function Clients() {
   const [tab, setTab] = useState<'active' | 'archived'>('active')
   const [query, setQuery] = useState('')
   const [inviteOpen, setInviteOpen] = useState(false)
+  const [email, setEmail] = useState('')
   const [focus, setFocus] = useState('')
-  const [inviteCode, setInviteCode] = useState<{ code: string; expiresAt: string } | null>(null)
+  const [inviteCode, setInviteCode] = useState<{ code: string; email: string | null; expiresAt: string } | null>(null)
   const [copied, setCopied] = useState(false)
 
   const clientsQ = useClients()
@@ -28,7 +30,8 @@ export default function Clients() {
   const copy = async () => {
     if (!inviteCode) return
     try {
-      await navigator.clipboard.writeText(inviteCode.code)
+      const url = `${window.location.origin}/login?mode=client&invite=${encodeURIComponent(inviteCode.code)}`
+      await navigator.clipboard.writeText(url)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch { /* clipboard unavailable */ }
@@ -61,7 +64,7 @@ export default function Clients() {
                 <div>
                   <h2 className="text-lg font-extrabold text-brand-deep">Приглашение клиента</h2>
                   <p className="mt-1 text-sm text-brand-mute">
-                    Передайте код клиенту — он введёт его при регистрации и сразу даст согласие на AI-обработку.
+                    Приглашение привяжет клиента только к вашему кабинету. Почта защищает ссылку от передачи другому человеку.
                   </p>
                 </div>
                 <button onClick={() => setInviteOpen(false)} className="btn-soft rounded-xl p-2" aria-label="Закрыть">
@@ -71,18 +74,30 @@ export default function Clients() {
               {!inviteCode ? (
                 <div>
                   <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="Почта клиента"
+                    className="mb-3 w-full rounded-2xl border border-brand-softpink/60 bg-white/80 px-4 py-3 text-sm outline-none placeholder:text-brand-mute/60 focus:ring-2 focus:ring-brand-lav"
+                  />
+                  <input
                     value={focus}
                     onChange={(e) => setFocus(e.target.value)}
                     placeholder="Запрос / фокус (необязательно): например, «тревога»"
                     className="w-full rounded-2xl border border-brand-softpink/60 bg-white/80 px-4 py-3 text-sm outline-none placeholder:text-brand-mute/60 focus:ring-2 focus:ring-brand-lav"
                   />
                   <button
-                    onClick={() => inviteMut.mutate({ focus })}
-                    disabled={inviteMut.isPending}
+                    onClick={() => inviteMut.mutate({ email: email.trim(), focus })}
+                    disabled={inviteMut.isPending || !email.trim()}
                     className="btn-3d mt-4 w-full rounded-2xl py-3 text-sm font-bold text-white"
                   >
                     {inviteMut.isPending ? 'Создаём…' : 'Создать код приглашения'}
                   </button>
+                  {inviteMut.error && (
+                    <p className="mt-3 rounded-2xl bg-brand-danger/10 px-4 py-3 text-sm font-semibold text-red-700">
+                      {friendlyApiError(inviteMut.error.message)}
+                    </p>
+                  )}
                 </div>
               ) : (
                 <div className="text-center">
@@ -91,9 +106,10 @@ export default function Clients() {
                     {inviteCode.code}
                   </p>
                   <p className="mt-2 text-xs text-brand-mute">действует до {inviteCode.expiresAt}</p>
+                  {inviteCode.email && <p className="mt-1 text-xs text-brand-mute">только для {inviteCode.email}</p>}
                   <button onClick={copy} className="btn-soft mx-auto mt-4 flex items-center gap-2 rounded-2xl px-6 py-2.5 text-sm font-bold text-brand-deep">
                     {copied ? <Check className="h-4 w-4 text-brand-success" /> : <Copy className="h-4 w-4" />}
-                    {copied ? 'Скопировано' : 'Скопировать код'}
+                    {copied ? 'Скопировано' : 'Скопировать ссылку'}
                   </button>
                 </div>
               )}

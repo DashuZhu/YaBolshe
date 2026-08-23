@@ -83,7 +83,7 @@ export default function Landing() {
             to="/login"
             className="btn-3d flex items-center gap-2 rounded-2xl px-8 py-4 text-base font-bold text-white"
           >
-            Открыть демо-кабинет
+            Войти в портал
             <ArrowRight className="h-5 w-5" />
           </Link>
           <a
@@ -188,7 +188,7 @@ export default function Landing() {
       </section>
 
       <footer className="border-t border-brand-softpink/40 py-8 text-center text-xs text-brand-mute">
-        «Я Больше!» · демо-версия с синтетическими данными · сделано с теплом
+        «Я Больше!» · терапевт решает, что становится доступно клиенту · сделано с теплом
       </footer>
     </div>
   )

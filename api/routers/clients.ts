@@ -137,7 +137,12 @@ export const clientsRouter = createRouter({
   }),
 
   createInvite: therapistQuery
-    .input(z.object({ focus: z.string().max(255).default("") }))
+    .input(
+      z.object({
+        email: z.string().email("Некорректный email"),
+        focus: z.string().max(255).default(""),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
       const code = randomBytes(4).toString("hex").toUpperCase();
@@ -145,11 +150,16 @@ export const clientsRouter = createRouter({
       await db.insert(invites).values({
         code,
         therapistId: ctx.user.id,
+        email: input.email.toLowerCase().trim(),
         focus: input.focus,
         expiresAt,
       });
       await logAudit(ctx.user.id, ctx.user.firstName, "client.invite_created", "invite", code);
-      return { code, expiresAt: ruDateTime(expiresAt) };
+      return {
+        code,
+        email: input.email.toLowerCase().trim(),
+        expiresAt: ruDateTime(expiresAt),
+      };
     }),
 
   archive: therapistQuery

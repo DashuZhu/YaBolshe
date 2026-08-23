@@ -36,6 +36,8 @@
 !db/**
 !whisper/
 !whisper/**
+!docs/
+!docs/**
 
 node_modules/
 dist/

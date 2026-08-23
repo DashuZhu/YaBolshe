@@ -119,7 +119,7 @@ export function AppShell({ children, role }: { children: ReactNode; role: 'thera
       <div className="lg:pl-64">
         <header className="sticky top-0 z-20 hidden items-center justify-end gap-3 border-b border-white/60 bg-brand-bg/70 px-8 py-3.5 backdrop-blur-xl lg:flex">
           <span className="rounded-full bg-brand-lav/30 px-3 py-1 text-xs font-bold text-brand-deep">
-            {roleNames[role]}
+            {me?.role === 'owner' ? 'Владелец платформы' : roleNames[role]}
           </span>
           <button className="btn-soft relative rounded-2xl p-2.5" aria-label="Уведомления">
             <Bell className="h-5 w-5 text-brand-deep" />
