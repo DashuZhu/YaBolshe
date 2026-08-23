@@ -29,7 +29,7 @@ function Guard({ role, children }: { role: 'therapist' | 'client' | 'admin'; chi
     )
   }
   if (!me) return <Navigate to="/login" state={{ from: location.pathname }} replace />
-  const allowed = me.role === role || (role === 'admin' && me.role === 'owner')
+  const allowed = me.role === role || (role === 'admin' && (me.role === 'owner' || me.isPlatformOwner))
   if (!allowed) return <Navigate to="/login" replace />
   return <>{children}</>
 }

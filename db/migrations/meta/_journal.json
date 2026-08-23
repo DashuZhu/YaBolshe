@@ -15,6 +15,13 @@
       "when": 1787489973300,
       "tag": "0001_account_access",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1787498133203,
+      "tag": "0002_many_masque",
+      "breakpoints": true
     }
   ]
 }

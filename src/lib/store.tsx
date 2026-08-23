@@ -7,6 +7,7 @@ type Me = {
   id: number
   email: string
   role: 'therapist' | 'client' | 'admin' | 'owner'
+  isPlatformOwner: boolean
   firstName: string
   lastName: string
 }

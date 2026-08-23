@@ -41,9 +41,10 @@ export default function Admin() {
   })
 
   const usage = usageQ.data
-  const hasOwner = (usersQ.data ?? []).some((user) => user.roleKey === 'owner')
+  const currentUserIsOwner = me?.role === 'owner' || me?.isPlatformOwner
+  const hasOwner = (usersQ.data ?? []).some((user) => user.roleKey === 'owner' || user.isPlatformOwner)
   const registrationUrl = inviteResult
-    ? `${window.location.origin}/login?mode=invited&invite=${encodeURIComponent(inviteResult.code)}`
+    ? `${window.location.origin}/#/login?mode=invited&invite=${encodeURIComponent(inviteResult.code)}`
     : ''
 
   const copyInvite = async () => {
@@ -97,8 +98,8 @@ export default function Admin() {
                 className="rounded-2xl border border-brand-softpink/60 bg-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-brand-lav"
               >
                 <option value="therapist">Терапевт</option>
-                {me?.role === 'owner' && <option value="admin">Администратор</option>}
-                {(me?.role === 'owner' || !hasOwner) && <option value="owner">Владелец</option>}
+                {currentUserIsOwner && <option value="admin">Администратор</option>}
+                {(currentUserIsOwner || !hasOwner) && <option value="owner">Владелец</option>}
               </select>
               <select
                 value={invitePlan}
@@ -112,7 +113,12 @@ export default function Admin() {
               <button
                 onClick={() => {
                   setInviteResult(null)
-                  inviteMut.mutate({ email: inviteEmail.trim(), role: inviteRole, plan: invitePlan })
+                  inviteMut.mutate({
+                    email: inviteEmail.trim(),
+                    role: inviteRole,
+                    plan: invitePlan,
+                    isPlatformOwner: false,
+                  })
                 }}
                 disabled={inviteMut.isPending || !inviteEmail.trim()}
                 className="btn-3d flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-bold text-white disabled:opacity-50"

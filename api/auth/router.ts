@@ -29,6 +29,7 @@ function publicUser(u: typeof users.$inferSelect) {
     id: u.id,
     email: u.email,
     role: u.role,
+    isPlatformOwner: u.isPlatformOwner,
     firstName: u.firstName,
     lastName: u.lastName,
   };
@@ -74,6 +75,7 @@ export const authRouter = createRouter({
           email,
           passwordHash: await hashPassword(input.password),
           role: invite.role,
+          isPlatformOwner: invite.isPlatformOwner,
           firstName: input.firstName.trim(),
           lastName: input.lastName.trim(),
         })
@@ -95,7 +97,7 @@ export const authRouter = createRouter({
         "auth.register_invited",
         "user",
         String(id),
-        { role: invite.role, plan: invite.plan },
+        { role: invite.role, plan: invite.plan, isPlatformOwner: invite.isPlatformOwner },
       );
       const token = await createSession(id, ctx.req.headers.get("user-agent") ?? undefined);
       ctx.resHeaders.append("set-cookie", sessionCookieHeader(token, 14 * 24 * 3600));

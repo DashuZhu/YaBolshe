@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
-import { desc, sql, eq, isNull, gt, and } from "drizzle-orm";
+import { desc, sql, eq, isNull, gt, and, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { createRouter, adminQuery } from "../middleware";
 import { getDb } from "../queries/connection";
@@ -49,9 +49,12 @@ export const adminRouter = createRouter({
         name: `${u.firstName} ${u.lastName}`.trim(),
         email: u.email,
         roleKey: u.role,
+        isPlatformOwner: u.isPlatformOwner,
         role:
           u.role === "therapist"
-            ? "Терапевт"
+            ? u.isPlatformOwner
+              ? "Терапевт · владелец"
+              : "Терапевт"
             : u.role === "client"
               ? "Клиент"
               : u.role === "owner"
@@ -76,6 +79,7 @@ export const adminRouter = createRouter({
       id: row.id,
       email: row.email,
       role: row.role,
+      isPlatformOwner: row.isPlatformOwner,
       plan: row.plan,
       code: row.usedByUserId ? null : row.code,
       status: row.usedByUserId
@@ -92,17 +96,20 @@ export const adminRouter = createRouter({
       z.object({
         email: z.string().email("Некорректный email"),
         role: z.enum(["therapist", "admin", "owner"]).default("therapist"),
+        isPlatformOwner: z.boolean().default(false),
         plan: z.enum(["free", "pro"]).default("free"),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
-      if (ctx.user.role !== "owner" && input.role !== "therapist") {
+      const callerIsOwner = ctx.user.role === "owner" || ctx.user.isPlatformOwner;
+      const createsOwner = input.role === "owner" || input.isPlatformOwner;
+      if (!callerIsOwner && (input.role !== "therapist" || input.isPlatformOwner)) {
         const ownerCount = await db
           .select({ n: sql<number>`count(*)` })
           .from(users)
-          .where(eq(users.role, "owner"));
-        const mayBootstrapFirstOwner = input.role === "owner" && Number(ownerCount[0]?.n ?? 0) === 0;
+          .where(or(eq(users.role, "owner"), eq(users.isPlatformOwner, true)));
+        const mayBootstrapFirstOwner = createsOwner && Number(ownerCount[0]?.n ?? 0) === 0;
         if (!mayBootstrapFirstOwner) {
           throw new TRPCError({
             code: "FORBIDDEN",
@@ -135,6 +142,7 @@ export const adminRouter = createRouter({
         code,
         email,
         role: input.role,
+        isPlatformOwner: input.isPlatformOwner,
         plan: input.role === "therapist" ? input.plan : "free",
         invitedByUserId: ctx.user.id,
         expiresAt,
@@ -145,7 +153,7 @@ export const adminRouter = createRouter({
         "account.invite_created",
         "account_invite",
         email,
-        { role: input.role, plan: input.plan },
+        { role: input.role, plan: input.plan, isPlatformOwner: input.isPlatformOwner },
       );
       return { code, email, expiresAt: ruDateTime(expiresAt) };
     }),

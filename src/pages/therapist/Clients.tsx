@@ -30,7 +30,7 @@ export default function Clients() {
   const copy = async () => {
     if (!inviteCode) return
     try {
-      const url = `${window.location.origin}/login?mode=client&invite=${encodeURIComponent(inviteCode.code)}`
+      const url = `${window.location.origin}/#/login?mode=client&invite=${encodeURIComponent(inviteCode.code)}`
       await navigator.clipboard.writeText(url)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)

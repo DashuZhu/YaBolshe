@@ -21,7 +21,8 @@ const requireRole = (roles: Array<"therapist" | "client" | "admin" | "owner">) =
     if (!ctx.user) {
       throw new TRPCError({ code: "UNAUTHORIZED", message: "Требуется вход в систему" });
     }
-    if (!roles.includes(ctx.user.role)) {
+    const allowedAsPlatformOwner = roles.includes("owner") && ctx.user.isPlatformOwner;
+    if (!roles.includes(ctx.user.role) && !allowedAsPlatformOwner) {
       throw new TRPCError({ code: "FORBIDDEN", message: "Недостаточно прав" });
     }
     return next({ ctx: { ...ctx, user: ctx.user } });
