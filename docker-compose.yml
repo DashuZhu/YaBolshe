@@ -17,11 +17,33 @@ services:
       timeout: 5s
       retries: 20
 
+  whisper:
+    build: ./whisper
+    restart: unless-stopped
+    environment:
+      WHISPER_MODEL: ${LOCAL_WHISPER_MODEL:-medium}
+      WHISPER_COMPUTE_TYPE: ${WHISPER_COMPUTE_TYPE:-int8}
+      WHISPER_CPU_THREADS: ${WHISPER_CPU_THREADS:-8}
+      WHISPER_NUM_WORKERS: ${WHISPER_NUM_WORKERS:-1}
+      HF_HOME: /models
+    expose:
+      - "8000"
+    volumes:
+      - whisper_models:/models
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 30m
+
   app:
     build: .
     restart: unless-stopped
     depends_on:
       db:
+        condition: service_healthy
+      whisper:
         condition: service_healthy
     environment:
       APP_ID: ${APP_ID:-yabolshe}
@@ -30,8 +52,10 @@ services:
       # Optional for local/demo mode. Set a real key only on the production server.
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5}
-      WHISPER_MODEL: ${WHISPER_MODEL:-whisper-1}
-      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-25}
+      WHISPER_URL: http://whisper:8000
+      LOCAL_WHISPER_MODEL: ${LOCAL_WHISPER_MODEL:-medium}
+      OPENAI_WHISPER_MODEL: ${OPENAI_WHISPER_MODEL:-whisper-1}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-250}
       UPLOAD_DIR: /app/data/uploads
       SEED_DEMO_PASSWORD: ${SEED_DEMO_PASSWORD:?Set SEED_DEMO_PASSWORD in .env}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
@@ -61,3 +85,4 @@ volumes:
   uploads_data:
   caddy_data:
   caddy_config:
+  whisper_models:

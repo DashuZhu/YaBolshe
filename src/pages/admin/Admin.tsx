@@ -137,7 +137,7 @@ export default function Admin() {
             {[
               { label: 'Активные клиенты на терапевта', value: '20', type: 'жёсткий лимит', hint: 'можно архивировать клиентов' },
               { label: 'Сессий в месяц', value: '80', type: 'мягкий лимит', hint: 'предупреждение при приближении' },
-              { label: 'Размер файла загрузки', value: '25 МБ', type: 'Whisper API', hint: 'env: MAX_UPLOAD_MB' },
+              { label: 'Размер файла загрузки', value: '250 МБ', type: 'локальный Whisper', hint: 'env: MAX_UPLOAD_MB' },
               { label: 'Часов медиа в месяц', value: '120 ч', type: 'мягкий лимит', hint: 'настраивается в профиле терапевта' },
               { label: 'Срок сессии входа', value: '14 дней', type: 'безопасность', hint: 'httpOnly cookie' },
               { label: 'Срок жизни приглашения', value: '30 дней', type: 'настраиваемый', hint: 'код одноразовый' },
@@ -189,14 +189,25 @@ export default function Admin() {
               <Pill tone={pingQ.data ? 'success' : 'danger'} className="mt-2">{pingQ.data ? 'online' : 'offline'}</Pill>
             </div>
             <div className="rounded-2xl bg-white/70 p-5">
-              <p className="text-sm font-bold text-brand-ink">AI-модуль</p>
+              <p className="text-sm font-bold text-brand-ink">Расшифровка</p>
               <p className="mt-1 text-xs text-brand-mute">
-                {pingQ.data?.aiEnabled
-                  ? 'OPENAI_API_KEY задан — реальная расшифровка и анализ'
-                  : 'Ключ не задан — работает mock-режим (синтетический анализ)'}
+                {pingQ.data?.transcriptionMode === 'local'
+                  ? 'Локальный Whisper Medium — аудио не уходит во внешний API'
+                  : pingQ.data?.transcriptionMode === 'openai'
+                    ? 'Расшифровка через OpenAI API'
+                    : 'Демо-расшифровка'}
+              </p>
+              <Pill tone={pingQ.data?.transcriptionEnabled ? 'success' : 'warning'} className="mt-2">
+                {pingQ.data?.transcriptionEnabled ? 'реальный режим' : 'mock mode'}
+              </Pill>
+            </div>
+            <div className="rounded-2xl bg-white/70 p-5">
+              <p className="text-sm font-bold text-brand-ink">Анализ текста</p>
+              <p className="mt-1 text-xs text-brand-mute">
+                {pingQ.data?.aiEnabled ? 'OPENAI_API_KEY задан — GPT-анализ включён' : 'Ключ не задан — анализ в демо-режиме'}
               </p>
               <Pill tone={pingQ.data?.aiEnabled ? 'success' : 'warning'} className="mt-2">
-                {pingQ.data?.aiEnabled ? 'реальный режим' : 'mock mode'}
+                {pingQ.data?.aiEnabled ? 'GPT включён' : 'демо-анализ'}
               </Pill>
             </div>
           </div>

@@ -2,7 +2,15 @@ import { readFile } from "node:fs/promises";
 import { eq, and, desc } from "drizzle-orm";
 import { getDb } from "../queries/connection";
 import { sessions, insights, themes, homework, agreements, tokenUsage } from "@db/schema";
-import { transcribeAudio, analyzeTranscript, aiEnabled, PROMPT_TEMPLATE_VERSION, type TranscriptSegment } from "./openai";
+import {
+  transcribeAudio,
+  analyzeTranscript,
+  aiEnabled,
+  localTranscriptionEnabled,
+  transcriptionModel,
+  PROMPT_TEMPLATE_VERSION,
+  type TranscriptSegment,
+} from "./openai";
 import { logAudit } from "../queries/audit";
 
 // Rough cost estimation (USD). Tune to your tariff.
@@ -52,10 +60,10 @@ export async function processSession(sessionId: number): Promise<void> {
       await db.insert(tokenUsage).values({
         sessionId,
         kind: "transcription",
-        model: aiEnabled() ? (process.env.WHISPER_MODEL ?? "whisper-1") : "mock",
+        model: transcriptionModel(),
         inputTokens: 0,
         outputTokens: 0,
-        costEstimate: aiEnabled() ? minutes * COST.whisperPerMin : 0,
+        costEstimate: aiEnabled() && !localTranscriptionEnabled() ? minutes * COST.whisperPerMin : 0,
       });
     } else {
       // manual session without media — nothing to transcribe

@@ -82,7 +82,7 @@ export default function Upload() {
       <div className="mx-auto max-w-3xl">
         <h1 className="text-3xl font-extrabold text-brand-deep">Загрузка сессии</h1>
         <p className="mt-1 text-brand-mute">
-          Аудио или видео до 25 МБ (предел Whisper API). mp3, wav, m4a, mp4, webm, ogg.
+          Аудио или видео до 250 МБ. Расшифровка выполняется локально на защищённом сервере.
         </p>
 
         {/* Consent notice */}
@@ -227,7 +227,7 @@ export default function Upload() {
             )}
             <p className="flex items-center gap-1.5 text-xs text-brand-mute">
               <Info className="h-3.5 w-3.5" />
-              Расшифровка: Whisper API · анализ: GPT · решения принимаете вы
+              Расшифровка: локальный Whisper Medium · анализ: GPT · решения принимаете вы
             </p>
           </div>
         </GlassCard>

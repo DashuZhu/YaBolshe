@@ -11,10 +11,16 @@ import {
   insightsRouter,
 } from "./routers/materials";
 import { adminRouter } from "./routers/admin";
-import { aiEnabled } from "./ai/openai";
+import { aiEnabled, localTranscriptionEnabled, transcriptionEnabled } from "./ai/openai";
 
 export const appRouter = createRouter({
-  ping: publicQuery.query(() => ({ ok: true, ts: Date.now(), aiEnabled: aiEnabled() })),
+  ping: publicQuery.query(() => ({
+    ok: true,
+    ts: Date.now(),
+    aiEnabled: aiEnabled(),
+    transcriptionEnabled: transcriptionEnabled(),
+    transcriptionMode: localTranscriptionEnabled() ? "local" as const : aiEnabled() ? "openai" as const : "mock" as const,
+  })),
 
   auth: authRouter,
   clients: clientsRouter,

@@ -8,7 +8,7 @@ import { processSession } from "./ai/pipeline";
 import { logAudit } from "./queries/audit";
 
 const UPLOAD_DIR = () => process.env.UPLOAD_DIR ?? join(process.cwd(), "data", "uploads");
-const MAX_BYTES = () => Number(process.env.MAX_UPLOAD_MB ?? 25) * 1024 * 1024;
+const MAX_BYTES = () => Number(process.env.MAX_UPLOAD_MB ?? 250) * 1024 * 1024;
 const ALLOWED_EXT = new Set([".mp3", ".wav", ".m4a", ".mp4", ".mpeg", ".mpga", ".webm", ".ogg"]);
 
 export async function handleUpload(req: Request): Promise<Response> {
@@ -48,7 +48,7 @@ export async function handleUpload(req: Request): Promise<Response> {
     if (file.size > MAX_BYTES()) {
       return Response.json(
         {
-          error: `Файл больше ${Math.round(MAX_BYTES() / 1024 / 1024)} МБ. Пока это предел Whisper API — разбивка длинных записей появится в следующем обновлении.`,
+          error: `Файл больше ${Math.round(MAX_BYTES() / 1024 / 1024)} МБ. Сожмите запись или загрузите только аудиодорожку.`,
         },
         { status: 413 },
       );

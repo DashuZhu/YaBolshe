@@ -34,6 +34,8 @@
 !contracts/**
 !db/
 !db/**
+!whisper/
+!whisper/**
 
 node_modules/
 dist/
@@ -44,4 +46,6 @@ coverage/
 .env.*
 !.env.example
 *.tsbuildinfo
+__pycache__/
+*.py[cod]
 data/

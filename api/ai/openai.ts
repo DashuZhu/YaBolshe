@@ -1,18 +1,33 @@
 import { z } from "zod";
 
 // ============================================================
-// OpenAI integration: Whisper transcription + structured analysis
-// Key is read ONLY on the server from env, never sent to frontend.
-// If OPENAI_API_KEY is missing — mock mode (synthetic data).
+// Local faster-whisper transcription + optional OpenAI structured analysis.
+// Secrets are read ONLY on the server from env, never sent to frontend.
 // ============================================================
 
 const API_KEY = () => process.env.OPENAI_API_KEY ?? "";
 const BASE_URL = () => (process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, "");
 const MODEL = () => process.env.OPENAI_MODEL ?? "gpt-5";
-const WHISPER = () => process.env.WHISPER_MODEL ?? "whisper-1";
+const OPENAI_WHISPER = () => process.env.OPENAI_WHISPER_MODEL ?? "whisper-1";
+const LOCAL_WHISPER_URL = () => (process.env.WHISPER_URL ?? "").replace(/\/$/, "");
+const LOCAL_WHISPER_MODEL = () => process.env.LOCAL_WHISPER_MODEL ?? "medium";
 
 export function aiEnabled(): boolean {
   return API_KEY().length > 0;
+}
+
+export function transcriptionEnabled(): boolean {
+  return LOCAL_WHISPER_URL().length > 0 || aiEnabled();
+}
+
+export function transcriptionModel(): string {
+  if (LOCAL_WHISPER_URL()) return `faster-whisper:${LOCAL_WHISPER_MODEL()}:int8`;
+  if (aiEnabled()) return OPENAI_WHISPER();
+  return "mock";
+}
+
+export function localTranscriptionEnabled(): boolean {
+  return LOCAL_WHISPER_URL().length > 0;
 }
 
 export const PROMPT_TEMPLATE_VERSION = "gestalt-analysis-v1";
@@ -39,10 +54,31 @@ export async function transcribeAudio(
   fileBytes: Buffer,
   fileName: string,
 ): Promise<{ segments: TranscriptSegment[]; durationSec: number }> {
+  if (LOCAL_WHISPER_URL()) {
+    const res = await fetch(`${LOCAL_WHISPER_URL()}/transcribe?language=ru`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "X-Filename": encodeURIComponent(fileName),
+      },
+      body: new Uint8Array(fileBytes),
+      signal: AbortSignal.timeout(4 * 60 * 60 * 1000),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Local Whisper error ${res.status}: ${text.slice(0, 300)}`);
+    }
+    const data = (await res.json()) as {
+      duration?: number;
+      segments?: { start: number; end: number; text: string; avg_logprob?: number }[];
+    };
+    return normalizeTranscript(data);
+  }
+
   if (!aiEnabled()) return mockTranscript();
 
   const form = new FormData();
-  form.append("model", WHISPER());
+  form.append("model", OPENAI_WHISPER());
   form.append("language", "ru");
   form.append("response_format", "verbose_json");
   form.append("timestamp_granularities[]", "segment");
@@ -61,6 +97,13 @@ export async function transcribeAudio(
     duration?: number;
     segments?: { start: number; end: number; text: string; avg_logprob?: number }[];
   };
+  return normalizeTranscript(data);
+}
+
+function normalizeTranscript(data: {
+  duration?: number;
+  segments?: { start: number; end: number; text: string; avg_logprob?: number }[];
+}): { segments: TranscriptSegment[]; durationSec: number } {
   const segments: TranscriptSegment[] = (data.segments ?? []).map((s, i) => ({
     id: `seg-${i + 1}`,
     start: ts(s.start),
