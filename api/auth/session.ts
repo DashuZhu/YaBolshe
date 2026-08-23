@@ -53,7 +53,13 @@ export async function findUserByToken(token: string | undefined): Promise<User |
     .select({ user: users })
     .from(authSessions)
     .innerJoin(users, eq(users.id, authSessions.userId))
-    .where(and(eq(authSessions.tokenHash, sha256(token)), gt(authSessions.expiresAt, new Date())))
+    .where(
+      and(
+        eq(authSessions.tokenHash, sha256(token)),
+        gt(authSessions.expiresAt, new Date()),
+        eq(users.status, "active"),
+      ),
+    )
     .limit(1);
   return rows[0]?.user;
 }
