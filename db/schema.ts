@@ -163,6 +163,9 @@ export const insights = mysqlTable("insights", {
   confidence: mysqlEnum("confidence", ["low", "medium", "high"]).notNull().default("medium"),
   evidenceJson: json("evidence_json"),
   approved: boolean("approved").notNull().default(false),
+  clientStatus: mysqlEnum("client_status", ["new", "exploring", "applying", "integrated", "discuss"])
+    .notNull()
+    .default("new"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

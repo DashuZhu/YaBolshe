@@ -96,6 +96,7 @@ export function serializeInsight(i: InsightRow) {
     confidence: i.confidence,
     evidence: (i.evidenceJson as string[] | null) ?? [],
     approved: i.approved,
+    clientStatus: i.clientStatus,
   };
 }
 

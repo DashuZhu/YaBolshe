@@ -63,44 +63,48 @@ export const clientsRouter = createRouter({
       .innerJoin(users, eq(users.id, clientProfiles.userId))
       .where(eq(clientProfiles.therapistId, ctx.user.id));
 
-    const result = [];
-    for (const { profile, user } of profiles) {
-      const clientSessions = await db
-        .select()
-        .from(sessions)
-        .where(eq(sessions.clientId, profile.id))
-        .orderBy(desc(sessions.sessionDate));
-
-      const sessionIds = clientSessions.map((s) => s.id);
-      let pendingApprovals = 0;
-      if (sessionIds.length > 0) {
-        const draftSessions = clientSessions.filter((s) =>
-          ["draft_ready", "therapist_review"].includes(s.status),
-        );
-        const draftIds = draftSessions.map((s) => s.id);
-        if (draftIds.length > 0) {
-          const ii = await db
-            .select({ n: sql<number>`count(*)` })
-            .from(insights)
-            .where(and(inArray(insights.sessionId, draftIds), eq(insights.approved, false)));
-          const tt = await db
-            .select({ n: sql<number>`count(*)` })
-            .from(themes)
-            .where(and(inArray(themes.sessionId, draftIds), eq(themes.approved, false)));
-          pendingApprovals = Number(ii[0]?.n ?? 0) + Number(tt[0]?.n ?? 0);
-        }
-      }
-
-      const hwActive = await db
-        .select({ n: sql<number>`count(*)` })
-        .from(homework)
+    if (profiles.length === 0) return [];
+    const clientIds = profiles.map(({ profile }) => profile.id);
+    const allSessions = await db
+      .select()
+      .from(sessions)
+      .where(inArray(sessions.clientId, clientIds))
+      .orderBy(desc(sessions.sessionDate));
+    const draftIds = allSessions
+      .filter((session) => ["draft_ready", "therapist_review"].includes(session.status))
+      .map((session) => session.id);
+    const [unapprovedInsights, unapprovedThemes, activeHomework] = await Promise.all([
+      draftIds.length > 0
+        ? db.select({ sessionId: insights.sessionId }).from(insights)
+            .where(and(inArray(insights.sessionId, draftIds), eq(insights.approved, false)))
+        : Promise.resolve([]),
+      draftIds.length > 0
+        ? db.select({ sessionId: themes.sessionId }).from(themes)
+            .where(and(inArray(themes.sessionId, draftIds), eq(themes.approved, false)))
+        : Promise.resolve([]),
+      db.select({ clientId: homework.clientId }).from(homework)
         .where(
           and(
-            eq(homework.clientId, profile.id),
+            inArray(homework.clientId, clientIds),
             inArray(homework.status, ["assigned", "in_progress"]),
             eq(homework.approved, true),
           ),
-        );
+        ),
+    ]);
+    const clientIdBySession = new Map(allSessions.map((session) => [session.id, session.clientId]));
+    const pendingByClient = new Map<number, number>();
+    for (const item of [...unapprovedInsights, ...unapprovedThemes]) {
+      const clientId = clientIdBySession.get(item.sessionId);
+      if (clientId) pendingByClient.set(clientId, (pendingByClient.get(clientId) ?? 0) + 1);
+    }
+    const homeworkByClient = new Map<number, number>();
+    for (const item of activeHomework) {
+      homeworkByClient.set(item.clientId, (homeworkByClient.get(item.clientId) ?? 0) + 1);
+    }
+
+    const result = [];
+    for (const { profile, user } of profiles) {
+      const clientSessions = allSessions.filter((session) => session.clientId === profile.id);
 
       const lastWithRisk = clientSessions.find(
         (s) =>
@@ -129,8 +133,8 @@ export const clientsRouter = createRouter({
         riskFlag: lastWithRisk
           ? { severity: "medium" as const, label: "Есть сигналы риска — проверить сессию" }
           : undefined,
-        pendingApprovals,
-        homeworkActive: Number(hwActive[0]?.n ?? 0),
+        pendingApprovals: pendingByClient.get(profile.id) ?? 0,
+        homeworkActive: homeworkByClient.get(profile.id) ?? 0,
         avatarHue: profile.avatarHue,
       });
     }

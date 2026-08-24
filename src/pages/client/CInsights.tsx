@@ -1,9 +1,8 @@
-import { useState } from 'react'
 import { Lightbulb, FlaskConical, MessageCircleHeart } from 'lucide-react'
 import { AppShell } from '@/components/shell'
 import { GlassCard } from '@/components/brand'
 import { Pill, EmptyState } from '@/components/widgets'
-import { useInsightsForClient, useHomeworkList } from '@/lib/store'
+import { trpc, useInsightsForClient, useHomeworkList } from '@/lib/store'
 import { clientActionLabel } from '@/lib/data'
 import { cn } from '@/lib/utils'
 
@@ -20,7 +19,10 @@ export default function CInsights() {
   const homeworkQ = useHomeworkList()
   const approvedInsights = (insightsQ.data ?? []).filter((i) => i.approved)
   const homework = homeworkQ.data ?? []
-  const [statuses, setStatuses] = useState<Record<string, string>>({})
+  const utils = trpc.useUtils()
+  const statusMut = trpc.insights.updateStatus.useMutation({
+    onSuccess: () => void utils.insights.listForClient.invalidate(),
+  })
 
   return (
     <AppShell role="client">
@@ -38,7 +40,7 @@ export default function CInsights() {
       <div className="grid gap-5 lg:grid-cols-2">
         {approvedInsights.map((i) => {
           const relatedHw = homework.find((h) => h.insightTitle === i.title && h.approved)
-          const status = statuses[i.id] ?? 'new'
+          const status = i.clientStatus
           return (
             <GlassCard key={i.id}>
               <div className="flex items-start gap-3">
@@ -74,7 +76,8 @@ export default function CInsights() {
                 {statusOptions.map((s) => (
                   <button
                     key={s.key}
-                    onClick={() => setStatuses((prev) => ({ ...prev, [i.id]: s.key }))}
+                    onClick={() => statusMut.mutate({ id: Number(i.id), status: s.key })}
+                    disabled={statusMut.isPending}
                     className={cn(
                       'rounded-full px-3 py-1.5 text-xs font-bold transition-all',
                       status === s.key

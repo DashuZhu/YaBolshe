@@ -1,4 +1,4 @@
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { getDb } from "../queries/connection";
 import { sessions, insights, themes, homework, agreements, tokenUsage } from "@db/schema";
 import {
@@ -79,10 +79,26 @@ export async function processSession(sessionId: number): Promise<void> {
       })
       .where(eq(sessions.id, sessionId));
 
+    // A transcript is still a useful, honest result when text analysis is not
+    // configured. Never replace real session content with demo conclusions.
+    if (!aiEnabled()) {
+      await setStatus(sessionId, "draft_ready");
+      await logAudit(null, "system", "transcription.complete_without_analysis", "session", String(sessionId), {
+        reason: "ai_not_configured",
+      });
+      return;
+    }
+
     // 2. analyze
     await setStatus(sessionId, "analyzing");
     const context = await approvedContextFor(session.clientId);
     const { analysis, model, inputTokens, outputTokens } = await analyzeTranscript(segments, context);
+
+    // Reprocessing replaces an earlier draft instead of duplicating its cards.
+    await db.delete(insights).where(eq(insights.sessionId, sessionId));
+    await db.delete(themes).where(eq(themes.sessionId, sessionId));
+    await db.delete(homework).where(eq(homework.sessionId, sessionId));
+    await db.delete(agreements).where(eq(agreements.sessionId, sessionId));
 
     await db
       .update(sessions)
@@ -182,5 +198,29 @@ export async function processSession(sessionId: number): Promise<void> {
     await logAudit(null, "system", "ai.analysis_failed", "session", String(sessionId), {
       error: message.slice(0, 300),
     });
+  }
+}
+
+const scheduledSessions = new Set<number>();
+let queueTail: Promise<void> = Promise.resolve();
+
+/** Keep CPU-heavy transcription sequential and survive duplicate enqueue calls. */
+export function enqueueSession(sessionId: number): void {
+  if (scheduledSessions.has(sessionId)) return;
+  scheduledSessions.add(sessionId);
+  queueTail = queueTail
+    .then(() => processSession(sessionId))
+    .catch((error) => console.error("queued session failed", sessionId, error))
+    .finally(() => scheduledSessions.delete(sessionId));
+}
+
+/** Resume work that was interrupted by an app/server restart. */
+export async function resumePendingSessions(): Promise<void> {
+  const pending = await getDb()
+    .select({ id: sessions.id, hasMedia: sessions.hasMedia, mediaPath: sessions.mediaPath })
+    .from(sessions)
+    .where(inArray(sessions.status, ["queued", "transcribing", "analyzing"]));
+  for (const session of pending) {
+    if (session.hasMedia && session.mediaPath) enqueueSession(session.id);
   }
 }

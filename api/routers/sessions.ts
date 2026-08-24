@@ -6,7 +6,7 @@ import { getDb } from "../queries/connection";
 import { sessions, insights, themes, homework, agreements, clientProfiles } from "@db/schema";
 import { serializeSession, type TranscriptSegmentDTO } from "../queries/serialize";
 import { logAudit } from "../queries/audit";
-import { processSession } from "../ai/pipeline";
+import { enqueueSession } from "../ai/pipeline";
 
 async function loadSessionWithMaterials(sessionId: number, clientView = false) {
   const db = getDb();
@@ -178,7 +178,7 @@ export const sessionsRouter = createRouter({
     .mutation(async ({ ctx, input }) => {
       await assertTherapistOwns(ctx.user.id, input.id);
       await getDb().update(sessions).set({ status: "queued" }).where(eq(sessions.id, input.id));
-      void processSession(input.id);
+      enqueueSession(input.id);
       return { ok: true };
     }),
 

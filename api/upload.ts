@@ -4,7 +4,7 @@ import { eq, and } from "drizzle-orm";
 import { getDb } from "./queries/connection";
 import { sessions } from "@db/schema";
 import { findUserByToken, readCookie, SESSION_COOKIE } from "./auth/session";
-import { processSession } from "./ai/pipeline";
+import { enqueueSession } from "./ai/pipeline";
 import { logAudit } from "./queries/audit";
 
 const UPLOAD_DIR = () => process.env.UPLOAD_DIR ?? join(process.cwd(), "data", "uploads");
@@ -121,7 +121,7 @@ export async function handleUpload(req: Request): Promise<Response> {
     });
 
     // fire-and-forget async processing
-    void processSession(sessionId);
+    enqueueSession(sessionId);
 
     return Response.json({ ok: true, sessionId });
   } catch (err) {

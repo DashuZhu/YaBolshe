@@ -385,7 +385,25 @@ export const insightsRouter = createRouter({
         confidence: i.confidence,
         evidence: (i.evidenceJson as string[] | null) ?? [],
         approved: i.approved,
+        clientStatus: i.clientStatus,
       },
     }));
   }),
+
+  updateStatus: clientQuery
+    .input(
+      z.object({
+        id: z.number(),
+        status: z.enum(["new", "exploring", "applying", "integrated", "discuss"]),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const profileId = await clientProfileIdFor(ctx.user.id);
+      const row = await getDb().query.insights.findFirst({ where: eq(insights.id, input.id) });
+      if (!row || row.clientId !== profileId || !row.approved) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Инсайт не найден" });
+      }
+      await getDb().update(insights).set({ clientStatus: input.status }).where(eq(insights.id, input.id));
+      return { ok: true };
+    }),
 });

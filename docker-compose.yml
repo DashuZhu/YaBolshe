@@ -63,9 +63,9 @@ services:
       db:
         condition: service_healthy
       whisper:
-        condition: service_healthy
+        condition: service_started
       parakeet:
-        condition: service_healthy
+        condition: service_started
     environment:
       APP_ID: ${APP_ID:-yabolshe}
       APP_SECRET: ${APP_SECRET:?Set APP_SECRET in .env}
@@ -86,12 +86,19 @@ services:
       - "3000"
     volumes:
       - uploads_data:/app/data/uploads
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 20s
+      timeout: 8s
+      retries: 6
+      start_period: 30s
 
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
     depends_on:
-      - app
+      app:
+        condition: service_started
     environment:
       DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
     ports:

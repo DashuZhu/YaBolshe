@@ -1,32 +1,37 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router'
-import type { ReactNode } from 'react'
+import { lazy, Suspense, type ReactNode } from 'react'
 import { AppProvider, useApp } from '@/lib/store'
 import Landing from '@/pages/Landing'
 import Login from '@/pages/Login'
-import TDashboard from '@/pages/therapist/TDashboard'
-import Clients from '@/pages/therapist/Clients'
-import ClientDetail from '@/pages/therapist/ClientDetail'
-import Upload from '@/pages/therapist/Upload'
-import SessionDetail from '@/pages/therapist/SessionDetail'
-import RoadmapPage from '@/pages/therapist/RoadmapPage'
-import CDashboard from '@/pages/client/CDashboard'
-import CInsights from '@/pages/client/CInsights'
-import CHomework from '@/pages/client/CHomework'
-import CAgreements from '@/pages/client/CAgreements'
-import CProgress from '@/pages/client/CProgress'
-import CCheckIn from '@/pages/client/CCheckIn'
-import CSafety from '@/pages/client/CSafety'
-import Admin from '@/pages/admin/Admin'
+
+const TDashboard = lazy(() => import('@/pages/therapist/TDashboard'))
+const Clients = lazy(() => import('@/pages/therapist/Clients'))
+const ClientDetail = lazy(() => import('@/pages/therapist/ClientDetail'))
+const Upload = lazy(() => import('@/pages/therapist/Upload'))
+const SessionDetail = lazy(() => import('@/pages/therapist/SessionDetail'))
+const RoadmapPage = lazy(() => import('@/pages/therapist/RoadmapPage'))
+const CDashboard = lazy(() => import('@/pages/client/CDashboard'))
+const CInsights = lazy(() => import('@/pages/client/CInsights'))
+const CHomework = lazy(() => import('@/pages/client/CHomework'))
+const CAgreements = lazy(() => import('@/pages/client/CAgreements'))
+const CProgress = lazy(() => import('@/pages/client/CProgress'))
+const CCheckIn = lazy(() => import('@/pages/client/CCheckIn'))
+const CSafety = lazy(() => import('@/pages/client/CSafety'))
+const Admin = lazy(() => import('@/pages/admin/Admin'))
+
+function PageLoading() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-brand-bg">
+      <div className="h-12 w-12 animate-pulse rounded-3xl bg-gradient-to-br from-brand-pink to-brand-violet" />
+    </div>
+  )
+}
 
 function Guard({ role, children }: { role: 'therapist' | 'client' | 'admin'; children: ReactNode }) {
   const { me } = useApp()
   const location = useLocation()
   if (me === undefined) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-brand-bg">
-        <div className="h-12 w-12 animate-pulse rounded-3xl bg-gradient-to-br from-brand-pink to-brand-violet" />
-      </div>
-    )
+    return <PageLoading />
   }
   if (!me) return <Navigate to="/login" state={{ from: location.pathname }} replace />
   const allowed = me.role === role || (role === 'admin' && (me.role === 'owner' || me.isPlatformOwner))
@@ -37,7 +42,7 @@ function Guard({ role, children }: { role: 'therapist' | 'client' | 'admin'; chi
 export default function App() {
   return (
     <AppProvider>
-      <Routes>
+      <Suspense fallback={<PageLoading />}><Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
 
@@ -62,7 +67,7 @@ export default function App() {
         <Route path="/a" element={<Guard role="admin"><Admin /></Guard>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      </Routes></Suspense>
     </AppProvider>
   )
 }

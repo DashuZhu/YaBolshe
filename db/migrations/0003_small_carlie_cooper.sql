@@ -1,0 +1,1 @@
+ALTER TABLE `insights` ADD `client_status` enum('new','exploring','applying','integrated','discuss') DEFAULT 'new' NOT NULL;

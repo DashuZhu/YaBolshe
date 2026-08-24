@@ -9,7 +9,19 @@ type App = Hono<{ Bindings: HttpBindings }>;
 export function serveStaticFiles(app: App) {
   const distPath = path.resolve(import.meta.dirname, "../dist/public");
 
-  app.use("*", serveStatic({ root: "./dist/public" }));
+  app.use(
+    "*",
+    serveStatic({
+      root: "./dist/public",
+      onFound: (filePath, c) => {
+        if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+          c.header("Cache-Control", "public, max-age=31536000, immutable");
+        } else {
+          c.header("Cache-Control", "no-cache");
+        }
+      },
+    }),
+  );
 
   app.notFound((c) => {
     const accept = c.req.header("accept") ?? "";
@@ -18,6 +30,7 @@ export function serveStaticFiles(app: App) {
     }
     const indexPath = path.resolve(distPath, "index.html");
     const content = fs.readFileSync(indexPath, "utf-8");
+    c.header("Cache-Control", "no-cache");
     return c.html(content);
   });
 }

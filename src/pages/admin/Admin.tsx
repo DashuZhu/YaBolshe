@@ -195,7 +195,7 @@ export default function Admin() {
             {[
               { label: 'Токенов всего', value: usage ? `${(usage.totalTokens / 1000).toFixed(1)}k` : '…' },
               { label: 'Оценка стоимости', value: usage ? `$${usage.totalCost.toFixed(2)}` : '…' },
-              { label: 'AI-режим', value: pingQ.data?.aiEnabled ? 'реальный' : 'mock (нет ключа)' },
+              { label: 'AI-анализ', value: pingQ.data?.aiEnabled ? 'включён' : 'не подключён' },
             ].map((s) => (
               <GlassCard key={s.label} className="text-center">
                 <p className="text-2xl font-extrabold text-brand-deep">{s.value}</p>
@@ -305,10 +305,10 @@ export default function Admin() {
             <div className="rounded-2xl bg-white/70 p-5">
               <p className="text-sm font-bold text-brand-ink">Анализ текста</p>
               <p className="mt-1 text-xs text-brand-mute">
-                {pingQ.data?.aiEnabled ? 'OPENAI_API_KEY задан — GPT-анализ включён' : 'Ключ не задан — анализ в демо-режиме'}
+                {pingQ.data?.aiEnabled ? 'OPENAI_API_KEY задан — GPT-анализ включён' : 'Ключ не задан — сохраняется только реальная расшифровка'}
               </p>
               <Pill tone={pingQ.data?.aiEnabled ? 'success' : 'warning'} className="mt-2">
-                {pingQ.data?.aiEnabled ? 'GPT включён' : 'демо-анализ'}
+                {pingQ.data?.aiEnabled ? 'GPT включён' : 'анализ отключён'}
               </Pill>
             </div>
           </div>

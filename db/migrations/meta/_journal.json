@@ -22,6 +22,13 @@
       "when": 1787498133203,
       "tag": "0002_many_masque",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1787606271992,
+      "tag": "0003_small_carlie_cooper",
+      "breakpoints": true
     }
   ]
 }

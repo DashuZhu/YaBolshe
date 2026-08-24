@@ -36,6 +36,24 @@ export function localTranscriptionEnabled(): boolean {
   return LOCAL_PARAKEET_URL().length > 0 || LOCAL_WHISPER_URL().length > 0;
 }
 
+export async function transcriptionHealth() {
+  const services = [
+    LOCAL_PARAKEET_URL() ? { name: "parakeet", url: LOCAL_PARAKEET_URL() } : null,
+    LOCAL_WHISPER_URL() ? { name: "whisper", url: LOCAL_WHISPER_URL() } : null,
+  ].filter((service): service is { name: string; url: string } => service !== null);
+  return Promise.all(
+    services.map(async (service) => {
+      const started = Date.now();
+      try {
+        const response = await fetch(`${service.url}/health`, { signal: AbortSignal.timeout(5000) });
+        return { name: service.name, ok: response.ok, responseMs: Date.now() - started };
+      } catch {
+        return { name: service.name, ok: false, responseMs: Date.now() - started };
+      }
+    }),
+  );
+}
+
 export const PROMPT_TEMPLATE_VERSION = "gestalt-analysis-v1";
 
 // -------------------- transcription --------------------
@@ -73,6 +91,7 @@ export async function transcribeAudio(
   for (const service of localServices) {
     try {
       const result = await transcribeWithLocalService(service.url, fileBytes, fileName);
+      assertUsefulTranscript(result);
       return { ...result, model: service.model };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -107,7 +126,9 @@ export async function transcribeAudio(
     duration?: number;
     segments?: { start: number; end: number; text: string; avg_logprob?: number }[];
   };
-  return { ...normalizeTranscript(data), model: OPENAI_WHISPER() };
+  const normalized = normalizeTranscript(data);
+  assertUsefulTranscript(normalized);
+  return { ...normalized, model: OPENAI_WHISPER() };
 }
 
 /** Transcribe a saved recording without loading a large local upload into app memory. */
@@ -128,6 +149,7 @@ export async function transcribeAudioFile(
   for (const service of localServices) {
     try {
       const result = await transcribeWithLocalFile(service.url, filePath, fileName);
+      assertUsefulTranscript(result);
       return { ...result, model: service.model };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -210,6 +232,18 @@ function normalizeTranscript(data: {
     confidence: Math.max(0, Math.min(1, Math.exp(s.avg_logprob ?? -0.3))),
   }));
   return { segments, durationSec: Math.round(data.duration ?? 0) };
+}
+
+function assertUsefulTranscript(result: { segments: TranscriptSegment[]; durationSec: number }): void {
+  const characters = result.segments.reduce((sum, segment) => sum + segment.text.length, 0);
+  const averageConfidence = result.segments.length > 0
+    ? result.segments.reduce((sum, segment) => sum + segment.confidence, 0) / result.segments.length
+    : 0;
+  if (result.segments.length === 0) throw new Error("распознавание вернуло пустой текст");
+  if (result.durationSec >= 20 && characters < 12) throw new Error("в записи почти не распознана речь");
+  if (result.segments.length >= 3 && averageConfidence < 0.35) {
+    throw new Error(`низкая уверенность распознавания: ${Math.round(averageConfidence * 100)}%`);
+  }
 }
 
 // -------------------- analysis --------------------
@@ -335,7 +369,7 @@ export async function analyzeTranscript(
   approvedContext: string,
 ): Promise<{ analysis: SessionAnalysis; model: string; inputTokens: number; outputTokens: number }> {
   if (!aiEnabled()) {
-    return { analysis: mockAnalysis(), model: "mock", inputTokens: 0, outputTokens: 0 };
+    throw new Error("AI-анализ не настроен");
   }
 
   const transcriptText = segments
@@ -389,7 +423,7 @@ export async function analyzeTranscript(
   };
 }
 
-// -------------------- mock mode --------------------
+// -------------------- mock transcription (development only) --------------------
 
 function mockTranscript() {
   return {
@@ -401,24 +435,5 @@ function mockTranscript() {
       { id: "seg-3", start: "00:01:38", end: "00:02:10", speaker: "unknown" as const, text: "Останемся с этим. Что вы сейчас замечаете в теле, когда говорите об этом?", confidence: 0.99 },
       { id: "seg-4", start: "00:02:11", end: "00:03:02", speaker: "unknown" as const, text: "Плечи сжались… и живот стянуло. Как будто тело знает «нет» раньше меня.", confidence: 0.97 },
     ],
-  };
-}
-
-function mockAnalysis(): SessionAnalysis {
-  return {
-    summary_short: "Демо-анализ (OPENAI_API_KEY не задан). Клиентка исследует автоматическое согласие; ключевая фигура — телесное «нет».",
-    summary_long: "",
-    client_friendly_summary: "На этой встрече вы заметили важное: тело часто знает ответ раньше, чем мысли. Это большой шаг — вы начинаете слышать себя.",
-    themes: [{ title: "Границы", description: "Автоматическое согласие и телесные сигналы отказа", evidence: ["seg-2", "seg-4"], confidence: "medium" }],
-    emotions: [{ label: "Интерес к себе", intensity: "medium", context: "Исследование телесных реакций" }],
-    needs: [{ label: "Право на выбор", description: "Потребность выбирать без чувства вины" }],
-    patterns: [{ title: "Автоматическое согласие", description: "Быстрое «да» при внутреннем «нет»", evidence: ["seg-2"], confidence: "medium" }],
-    insights: [{ title: "Тело знает ответ раньше меня", description: "Телесные сигналы появляются до осознанного решения.", client_action: "explore", evidence: ["seg-4"], confidence: "medium" }],
-    homework: [{ title: "Дневник телесных сигналов", description: "2–3 раза в день отмечать ощущения в теле.", purpose: "Развивать осознавание", frequency: "ежедневно", due_date: null }],
-    agreements: [{ text: "Перед автоматическим «да» — пауза и вопрос себе: «Я правда этого хочу?»", type: "agreement", review_date: null }],
-    risk_flags: [],
-    dynamics_vs_previous: { summary: "Демо-режим: сравнение появится при реальном анализе.", improved: [], stable: [], new_topics: [] },
-    therapist_questions: ["Что происходит с чувством вины в момент импульса отказать?"],
-    uncertainties: ["Демо-анализ без реальной модели: уверенность условна."],
   };
 }
