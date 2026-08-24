@@ -1,5 +1,6 @@
 import asyncio
 import math
+import os
 import re
 import subprocess
 import tempfile
@@ -15,6 +16,7 @@ MODEL_NAME = "nvidia/parakeet-tdt-0.6b-v3:q8_0:cpu"
 
 app = FastAPI(title="YaBolshe local Parakeet", docs_url=None, redoc_url=None)
 transcription_lock = asyncio.Semaphore(1)
+MAX_UPLOAD_BYTES = int(os.getenv("PARAKEET_MAX_UPLOAD_MB", "250")) * 1024 * 1024
 
 
 @app.get("/health")
@@ -108,19 +110,24 @@ def run_transcription(source_path: str, language: str) -> dict:
 
 @app.post("/transcribe")
 async def transcribe(request: Request, language: str = "ru") -> dict:
-    body = await request.body()
-    if not body:
-        raise HTTPException(status_code=400, detail="empty audio file")
-
     encoded_name = request.headers.get("x-filename", "audio.mp3")
     suffix = Path(unquote(encoded_name)).suffix.lower() or ".mp3"
     source_path = ""
     try:
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as source_file:
-            source_file.write(body)
             source_path = source_file.name
+            size = 0
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > MAX_UPLOAD_BYTES:
+                    raise HTTPException(status_code=413, detail="audio file is too large")
+                source_file.write(chunk)
+        if size == 0:
+            raise HTTPException(status_code=400, detail="empty audio file")
         async with transcription_lock:
             return await asyncio.to_thread(run_transcription, source_path, language)
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)[:500]) from exc
     finally:

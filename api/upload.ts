@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, open, unlink } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { eq, and } from "drizzle-orm";
 import { getDb } from "./queries/connection";
@@ -15,11 +15,49 @@ const ALLOWED_EXT = new Set([
   ".3gp", ".3g2", ".ts", ".mts", ".m2ts",
 ]);
 
+function uploadFileName(req: Request): string {
+  const encoded = req.headers.get("x-filename") ?? "";
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    return encoded;
+  }
+}
+
+async function streamRequestToFile(req: Request, fullPath: string): Promise<number> {
+  if (!req.body) throw new Error("Файл не передан");
+
+  const declaredSize = Number(req.headers.get("content-length") ?? 0);
+  if (Number.isFinite(declaredSize) && declaredSize > MAX_BYTES()) {
+    throw new UploadTooLargeError();
+  }
+
+  const handle = await open(fullPath, "wx");
+  const reader = req.body.getReader();
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_BYTES()) throw new UploadTooLargeError();
+      await handle.write(value);
+    }
+    if (size === 0) throw new Error("Файл пуст");
+    return size;
+  } finally {
+    reader.releaseLock();
+    await handle.close();
+  }
+}
+
+class UploadTooLargeError extends Error {}
+
 export async function handleUpload(req: Request): Promise<Response> {
   try {
     const url = new URL(req.url);
     const sessionId = Number(url.searchParams.get("sessionId"));
-    if (!Number.isFinite(sessionId)) {
+    if (!Number.isInteger(sessionId) || sessionId <= 0) {
       return Response.json({ error: "sessionId обязателен" }, { status: 400 });
     }
 
@@ -37,46 +75,49 @@ export async function handleUpload(req: Request): Promise<Response> {
       return Response.json({ error: "Сессия не найдена" }, { status: 404 });
     }
 
-    const form = await req.formData();
-    const file = form.get("file");
-    if (!(file instanceof File)) {
-      return Response.json({ error: "Файл не передан" }, { status: 400 });
+    const fileName = uploadFileName(req);
+    if (!fileName) {
+      return Response.json({ error: "Имя файла не передано" }, { status: 400 });
     }
-    const ext = extname(file.name).toLowerCase();
+    const ext = extname(fileName).toLowerCase();
     if (!ALLOWED_EXT.has(ext)) {
       return Response.json(
         { error: `Формат ${ext || "без расширения"} не поддерживается. Выберите обычный аудио- или видеофайл.` },
         { status: 400 },
       );
     }
-    if (file.size > MAX_BYTES()) {
-      return Response.json(
-        {
-          error: `Файл больше ${Math.round(MAX_BYTES() / 1024 / 1024)} МБ. Сожмите запись или загрузите только аудиодорожку.`,
-        },
-        { status: 413 },
-      );
-    }
-
     await mkdir(UPLOAD_DIR(), { recursive: true });
     const safeName = `session-${sessionId}-${Date.now()}${ext}`;
     const fullPath = join(UPLOAD_DIR(), safeName);
-    const bytes = Buffer.from(await file.arrayBuffer());
-    await writeFile(fullPath, bytes);
+    let size = 0;
+    try {
+      size = await streamRequestToFile(req, fullPath);
+    } catch (err) {
+      await unlink(fullPath).catch(() => undefined);
+      if (err instanceof UploadTooLargeError) {
+        return Response.json(
+          {
+            error: `Файл больше ${Math.round(MAX_BYTES() / 1024 / 1024)} МБ. Сожмите запись или загрузите только аудиодорожку.`,
+          },
+          { status: 413 },
+        );
+      }
+      throw err;
+    }
 
     await db
       .update(sessions)
       .set({
         hasMedia: true,
         mediaPath: fullPath,
-        mediaSizeBytes: file.size,
+        mediaSizeBytes: size,
         status: "queued",
       })
       .where(eq(sessions.id, sessionId));
 
     await logAudit(user.id, user.firstName, "session.upload", "session", String(sessionId), {
-      fileName: file.name,
-      sizeBytes: file.size,
+      fileName,
+      sizeBytes: size,
     });
 
     // fire-and-forget async processing

@@ -1,9 +1,8 @@
-import { readFile } from "node:fs/promises";
 import { eq, and, desc } from "drizzle-orm";
 import { getDb } from "../queries/connection";
 import { sessions, insights, themes, homework, agreements, tokenUsage } from "@db/schema";
 import {
-  transcribeAudio,
+  transcribeAudioFile,
   analyzeTranscript,
   aiEnabled,
   localTranscriptionEnabled,
@@ -51,8 +50,10 @@ export async function processSession(sessionId: number): Promise<void> {
     let segments: TranscriptSegment[];
     let durationSec = session.durationMin * 60;
     if (session.hasMedia && session.mediaPath) {
-      const bytes = await readFile(session.mediaPath);
-      const result = await transcribeAudio(bytes, session.mediaPath.split("/").pop() ?? "audio.mp3");
+      const result = await transcribeAudioFile(
+        session.mediaPath,
+        session.mediaPath.split("/").pop() ?? "audio.mp3",
+      );
       segments = result.segments;
       durationSec = result.durationSec || durationSec;
       const minutes = durationSec / 60;

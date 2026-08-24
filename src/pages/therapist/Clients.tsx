@@ -48,10 +48,10 @@ export default function Clients() {
         </div>
         <button
           onClick={() => { setInviteOpen(true); setInviteCode(null) }}
-          className="btn-3d flex items-center gap-2 rounded-2xl px-6 py-3 text-sm font-bold text-white"
+          className="btn-soft flex items-center gap-2 rounded-2xl px-6 py-3 text-sm font-bold text-brand-deep"
         >
           <UserPlus className="h-5 w-5" />
-          Пригласить клиента
+          Пригласить в кабинет
         </button>
       </div>
 
@@ -185,7 +185,7 @@ export default function Clients() {
       </div>
       {clientsQ.data && list.length === 0 && (
         <p className="mt-8 text-center text-sm text-brand-mute">
-          {tab === 'active' ? 'Пока нет активных клиентов — пригласите первого кодом выше.' : 'Архив пуст.'}
+          {tab === 'active' ? 'Пока нет клиентов — загрузите запись или пригласите клиента в кабинет.' : 'Архив пуст.'}
         </p>
       )}
     </AppShell>

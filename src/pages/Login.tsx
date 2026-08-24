@@ -2,11 +2,19 @@ import { useState } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router'
 import { Heart, ArrowLeft, Loader2, KeyRound, Mail, UserRound, Ticket } from 'lucide-react'
 import { Logo, Blobs, GlassCard } from '@/components/brand'
-import { trpc, useApp } from '@/lib/store'
+import { trpc } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import { friendlyApiError } from '@/lib/errors'
 
 type Mode = 'login' | 'invited' | 'client'
+type AuthenticatedUser = {
+  id: number
+  email: string
+  role: 'therapist' | 'client' | 'admin' | 'owner'
+  isPlatformOwner: boolean
+  firstName: string
+  lastName: string
+}
 
 const inputCls =
   'w-full rounded-2xl border border-brand-softpink/60 bg-white/80 px-4 py-3 text-sm text-brand-ink outline-none placeholder:text-brand-mute/60 focus:ring-2 focus:ring-brand-lav'
@@ -14,7 +22,6 @@ const inputCls =
 export default function Login() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { refreshAll } = useApp()
   const initialInvite = searchParams.get('invite')?.trim().toUpperCase() ?? ''
   const initialMode: Mode = searchParams.get('mode') === 'client'
     ? 'client'
@@ -30,26 +37,29 @@ export default function Login() {
   })
 
   const utils = trpc.useUtils()
-  const go = (role: string) => {
-    refreshAll()
+  const go = (user: AuthenticatedUser) => {
+    // The login response already contains the authenticated user. Put it into
+    // the cache before navigation so Guard never sees the stale logged-out value.
+    utils.auth.me.setData(undefined, user)
+    navigate(user.role === 'therapist' ? '/t' : user.role === 'client' ? '/c' : '/a', { replace: true })
     void utils.invalidate()
-    navigate(role === 'therapist' ? '/t' : role === 'client' ? '/c' : '/a')
   }
 
   const loginMut = trpc.auth.login.useMutation({
-    onSuccess: (u) => go(u.role),
+    onSuccess: go,
     onError: (e) => { setError(friendlyApiError(e.message)); setBusy(false) },
   })
   const regInvitedMut = trpc.auth.registerInvited.useMutation({
-    onSuccess: (u) => go(u.role),
+    onSuccess: go,
     onError: (e) => { setError(friendlyApiError(e.message)); setBusy(false) },
   })
   const regCMut = trpc.auth.registerClient.useMutation({
-    onSuccess: (u) => go(u.role),
+    onSuccess: go,
     onError: (e) => { setError(friendlyApiError(e.message)); setBusy(false) },
   })
 
   const submit = () => {
+    if (busy) return
     setError('')
     setBusy(true)
     const email = form.email.trim()

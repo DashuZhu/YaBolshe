@@ -16,6 +16,7 @@ import {
 } from "@db/schema";
 import { logAudit } from "../queries/audit";
 import { ruDate, ruDateTime } from "../queries/serialize";
+import { hashPassword } from "../auth/session";
 
 function initials(first: string, last: string) {
   return ((first[0] ?? "") + (last[0] ?? "")).toUpperCase() || "??";
@@ -135,6 +136,70 @@ export const clientsRouter = createRouter({
     }
     return result;
   }),
+
+  createManual: therapistQuery
+    .input(
+      z.object({
+        name: z.string().trim().min(1, "Укажите имя клиента").max(240),
+        focus: z.string().trim().max(255).default(""),
+        aiConsent: z.literal(true, {
+          error: "Подтвердите, что клиент согласился на обработку записи",
+        }),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const normalizedName = input.name.toLocaleLowerCase("ru-RU").replace(/\s+/g, " ").trim();
+      const existingProfiles = await db
+        .select({ profile: clientProfiles, user: users })
+        .from(clientProfiles)
+        .innerJoin(users, eq(users.id, clientProfiles.userId))
+        .where(eq(clientProfiles.therapistId, ctx.user.id));
+      const existing = existingProfiles.find(({ user }) =>
+        `${user.firstName} ${user.lastName}`
+          .toLocaleLowerCase("ru-RU")
+          .replace(/\s+/g, " ")
+          .trim() === normalizedName,
+      );
+      if (existing) {
+        if (existing.profile.status === "archived" || !existing.profile.aiConsent) {
+          await db
+            .update(clientProfiles)
+            .set({ status: "active", aiConsent: true })
+            .where(eq(clientProfiles.id, existing.profile.id));
+        }
+        return { id: String(existing.profile.id), name: input.name, created: false };
+      }
+
+      const parts = input.name.split(/\s+/).filter(Boolean);
+      const firstName = parts.shift() ?? input.name;
+      const lastName = parts.join(" ");
+      const internalId = randomBytes(12).toString("hex");
+      const [{ id: userId }] = await db
+        .insert(users)
+        .values({
+          email: `manual.${ctx.user.id}.${internalId}@local.yabolshe`,
+          passwordHash: await hashPassword(randomBytes(32).toString("hex")),
+          role: "client",
+          firstName,
+          lastName,
+        })
+        .$returningId();
+      const [{ id }] = await db
+        .insert(clientProfiles)
+        .values({
+          userId,
+          therapistId: ctx.user.id,
+          focus: input.focus,
+          avatarHue: Math.floor(Math.random() * 360),
+          aiConsent: true,
+        })
+        .$returningId();
+      await logAudit(ctx.user.id, ctx.user.firstName, "client.created_manual", "client", String(id), {
+        name: input.name,
+      });
+      return { id: String(id), name: input.name, created: true };
+    }),
 
   createInvite: therapistQuery
     .input(

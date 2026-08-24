@@ -50,7 +50,7 @@ export function useSessions() {
 }
 
 export function useSession(id: number) {
-  return trpc.sessions.get.useQuery({ id }, { refetchInterval: 8000 })
+  return trpc.sessions.get.useQuery({ id }, { enabled: id > 0, refetchInterval: 8000 })
 }
 
 export function useClients() {

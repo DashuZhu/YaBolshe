@@ -14,6 +14,7 @@ COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
 CPU_THREADS = int(os.getenv("WHISPER_CPU_THREADS", "8"))
 NUM_WORKERS = int(os.getenv("WHISPER_NUM_WORKERS", "1"))
 MODEL_DIR = os.getenv("HF_HOME", "/models")
+MAX_UPLOAD_BYTES = int(os.getenv("WHISPER_MAX_UPLOAD_MB", "250")) * 1024 * 1024
 
 app = FastAPI(title="YaBolshe local Whisper", docs_url=None, redoc_url=None)
 model: WhisperModel | None = None
@@ -68,19 +69,24 @@ def run_transcription(path: str, language: str) -> dict:
 
 @app.post("/transcribe")
 async def transcribe(request: Request, language: str = "ru") -> dict:
-    body = await request.body()
-    if not body:
-        raise HTTPException(status_code=400, detail="empty audio file")
-
     encoded_name = request.headers.get("x-filename", "audio.mp3")
     suffix = Path(unquote(encoded_name)).suffix.lower() or ".mp3"
     temp_path = ""
     try:
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_file:
-            temp_file.write(body)
             temp_path = temp_file.name
+            size = 0
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > MAX_UPLOAD_BYTES:
+                    raise HTTPException(status_code=413, detail="audio file is too large")
+                temp_file.write(chunk)
+        if size == 0:
+            raise HTTPException(status_code=400, detail="empty audio file")
         async with transcription_lock:
             return await asyncio.to_thread(run_transcription, temp_path, language)
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)[:500]) from exc
     finally:

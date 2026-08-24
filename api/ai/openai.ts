@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { createReadStream } from "node:fs";
+import { readFile } from "node:fs/promises";
 
 // ============================================================
 // Local Parakeet transcription with faster-whisper fallback + optional OpenAI analysis.
@@ -108,6 +110,41 @@ export async function transcribeAudio(
   return { ...normalizeTranscript(data), model: OPENAI_WHISPER() };
 }
 
+/** Transcribe a saved recording without loading a large local upload into app memory. */
+export async function transcribeAudioFile(
+  filePath: string,
+  fileName: string,
+): Promise<{ segments: TranscriptSegment[]; durationSec: number; model: string }> {
+  const localErrors: string[] = [];
+  const localServices = [
+    LOCAL_PARAKEET_URL()
+      ? { url: LOCAL_PARAKEET_URL(), model: `parakeet:${LOCAL_PARAKEET_MODEL()}` }
+      : null,
+    LOCAL_WHISPER_URL()
+      ? { url: LOCAL_WHISPER_URL(), model: `faster-whisper:${LOCAL_WHISPER_MODEL()}:int8` }
+      : null,
+  ].filter((service): service is { url: string; model: string } => service !== null);
+
+  for (const service of localServices) {
+    try {
+      const result = await transcribeWithLocalFile(service.url, filePath, fileName);
+      return { ...result, model: service.model };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      localErrors.push(`${service.model}: ${message}`);
+      console.warn("local transcription service failed, trying fallback", service.model, message);
+    }
+  }
+
+  if (localServices.length > 0) {
+    throw new Error(`Local transcription failed: ${localErrors.join(" | ")}`);
+  }
+
+  // The external API requires multipart data. This fallback is only used when
+  // local transcription is not configured.
+  return transcribeAudio(await readFile(filePath), fileName);
+}
+
 async function transcribeWithLocalService(
   url: string,
   fileBytes: Buffer,
@@ -131,6 +168,33 @@ async function transcribeWithLocalService(
       segments?: { start: number; end: number; text: string; avg_logprob?: number }[];
     };
     return normalizeTranscript(data);
+}
+
+async function transcribeWithLocalFile(
+  url: string,
+  filePath: string,
+  fileName: string,
+): Promise<{ segments: TranscriptSegment[]; durationSec: number }> {
+  const res = await fetch(`${url}/transcribe?language=ru`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/octet-stream",
+      "X-Filename": encodeURIComponent(fileName),
+    },
+    body: createReadStream(filePath) as unknown as BodyInit,
+    // Required by Node fetch for a streaming request body.
+    duplex: "half",
+    signal: AbortSignal.timeout(4 * 60 * 60 * 1000),
+  } as RequestInit & { duplex: "half" });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
+  }
+  const data = (await res.json()) as {
+    duration?: number;
+    segments?: { start: number; end: number; text: string; avg_logprob?: number }[];
+  };
+  return normalizeTranscript(data);
 }
 
 function normalizeTranscript(data: {
