@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 import { UploadCloud, FileVideo, CheckCircle2, Loader2, ShieldCheck, Info, AlertTriangle } from 'lucide-react'
 import { AppShell } from '@/components/shell'
 import { GlassCard } from '@/components/brand'
@@ -9,6 +9,7 @@ import { sessionStatusMeta, type SessionStatus } from '@/lib/data'
 import { cn } from '@/lib/utils'
 
 const pipelineStages: SessionStatus[] = ['queued', 'transcribing', 'analyzing', 'draft_ready']
+const MAX_UPLOAD_BYTES = 250 * 1024 * 1024
 
 export default function Upload() {
   const [params] = useSearchParams()
@@ -32,6 +33,21 @@ export default function Upload() {
 
   const effectiveClientId = clientId || (clients[0]?.id ?? '')
   const client = clients.find((c) => c.id === effectiveClientId)
+  const hasActiveClients = clients.some((c) => c.status === 'active')
+
+  const chooseFile = (selected: File | null) => {
+    setError('')
+    if (!selected) {
+      setFile(null)
+      return
+    }
+    if (selected.size > MAX_UPLOAD_BYTES) {
+      setFile(null)
+      setError('Файл больше 250 МБ. Сожмите видео или сохраните только аудиодорожку.')
+      return
+    }
+    setFile(selected)
+  }
 
   const start = async () => {
     if (!file || !effectiveClientId || phase === 'uploading') return
@@ -85,6 +101,18 @@ export default function Upload() {
           Аудио или видео до 250 МБ. Расшифровка выполняется локально на защищённом сервере.
         </p>
 
+        {clientsQ.data && !hasActiveClients && (
+          <div className="mt-6 rounded-2xl border border-brand-pink/40 bg-brand-softpink/20 px-5 py-4">
+            <p className="font-bold text-brand-deep">Сначала добавьте клиента</p>
+            <p className="mt-1 text-sm text-brand-mute">
+              Запись обязательно привязывается к клиенту и загружается только после его согласия на обработку.
+            </p>
+            <Link to="/t/clients" className="btn-3d mt-3 inline-flex rounded-xl px-5 py-2.5 text-sm font-bold text-white">
+              Пригласить клиента
+            </Link>
+          </div>
+        )}
+
         {/* Consent notice */}
         <div className="mt-6 flex items-start gap-3 rounded-2xl border border-brand-success/40 bg-brand-success/10 px-4 py-3">
           <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" />
@@ -104,6 +132,7 @@ export default function Upload() {
             disabled={phase !== 'idle'}
             className="mb-4 w-full rounded-2xl border border-brand-softpink/60 bg-white/80 px-4 py-3 text-sm font-semibold text-brand-ink outline-none focus:ring-2 focus:ring-brand-lav"
           >
+            {!hasActiveClients && <option value="">Нет активных клиентов</option>}
             {clients.filter((c) => c.status === 'active').map((c) => (
               <option key={c.id} value={c.id}>{c.name}{c.focus ? ` — ${c.focus}` : ''}</option>
             ))}
@@ -122,9 +151,9 @@ export default function Upload() {
           <input
             ref={fileInput}
             type="file"
-            accept=".mp3,.wav,.m4a,.mp4,.mpeg,.mpga,.webm,.ogg,audio/*,video/*"
+            accept=".mp3,.wav,.m4a,.aac,.flac,.opus,.ogg,.mp4,.mov,.mkv,.avi,.mpeg,.mpga,.webm,.3gp,.3g2,.ts,.mts,.m2ts,audio/*,video/*"
             className="hidden"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            onChange={(e) => chooseFile(e.target.files?.[0] ?? null)}
           />
           <button
             onClick={() => phase === 'idle' && fileInput.current?.click()}
@@ -145,7 +174,7 @@ export default function Upload() {
               <>
                 <UploadCloud className="mb-3 h-10 w-10 text-brand-pink" />
                 <p className="font-bold text-brand-ink">Выберите файл записи сессии</p>
-                <p className="mt-1 text-sm text-brand-mute">до 25 МБ · mp3, wav, m4a, mp4, webm</p>
+                <p className="mt-1 text-sm text-brand-mute">до 250 МБ · mp3, wav, m4a, mp4, mov, webm и другие</p>
               </>
             )}
           </button>
@@ -194,16 +223,22 @@ export default function Upload() {
           {/* Actions */}
           <div className="mt-6 flex flex-wrap items-center gap-3">
             {phase === 'idle' || phase === 'error' ? (
-              <button
-                onClick={start}
-                disabled={!file || !effectiveClientId || createMut.isPending}
-                className={cn(
-                  'btn-3d rounded-2xl px-8 py-3.5 text-sm font-bold text-white',
-                  (!file || !effectiveClientId) && 'cursor-not-allowed opacity-50',
-                )}
-              >
-                {createMut.isPending ? 'Подготовка…' : phase === 'error' ? 'Попробовать снова' : 'Загрузить и обработать'}
-              </button>
+              !hasActiveClients ? (
+                <Link to="/t/clients" className="btn-3d rounded-2xl px-8 py-3.5 text-sm font-bold text-white">
+                  Сначала пригласить клиента
+                </Link>
+              ) : (
+                <button
+                  onClick={start}
+                  disabled={!file || !effectiveClientId || createMut.isPending}
+                  className={cn(
+                    'btn-3d rounded-2xl px-8 py-3.5 text-sm font-bold text-white',
+                    (!file || !effectiveClientId) && 'cursor-not-allowed opacity-50',
+                  )}
+                >
+                  {createMut.isPending ? 'Подготовка…' : phase === 'error' ? 'Попробовать снова' : 'Загрузить и обработать'}
+                </button>
+              )
             ) : phase === 'uploading' ? (
               <span className="btn-3d flex items-center gap-2 rounded-2xl px-8 py-3.5 text-sm font-bold text-white opacity-70">
                 <Loader2 className="h-4 w-4 animate-spin" /> Загружаем файл…
@@ -227,7 +262,7 @@ export default function Upload() {
             )}
             <p className="flex items-center gap-1.5 text-xs text-brand-mute">
               <Info className="h-3.5 w-3.5" />
-              Расшифровка: локальный Whisper Medium · анализ: GPT · решения принимаете вы
+              Расшифровка: локальный Parakeet · резерв: Whisper Medium · решения принимаете вы
             </p>
           </div>
         </GlassCard>

@@ -18,7 +18,9 @@ app.use("/api/trpc/*", async (c) => {
     createContext,
   });
 });
-app.post("/api/upload", bodyLimit({ maxSize: 200 * 1024 * 1024 }), async (c) => {
+// Multipart adds a small envelope around the file, so keep the transport limit
+// slightly above the advertised 250 MB file limit enforced in handleUpload.
+app.post("/api/upload", bodyLimit({ maxSize: 255 * 1024 * 1024 }), async (c) => {
   return handleUpload(c.req.raw);
 });
 app.all("/api/*", (c) => c.json({ error: "Not Found" }, 404));
