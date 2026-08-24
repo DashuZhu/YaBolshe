@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 // ============================================================
-// Local faster-whisper transcription + optional OpenAI structured analysis.
+// Local Parakeet transcription with faster-whisper fallback + optional OpenAI analysis.
 // Secrets are read ONLY on the server from env, never sent to frontend.
 // ============================================================
 
@@ -9,6 +9,9 @@ const API_KEY = () => process.env.OPENAI_API_KEY ?? "";
 const BASE_URL = () => (process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, "");
 const MODEL = () => process.env.OPENAI_MODEL ?? "gpt-5";
 const OPENAI_WHISPER = () => process.env.OPENAI_WHISPER_MODEL ?? "whisper-1";
+const LOCAL_PARAKEET_URL = () => (process.env.PARAKEET_URL ?? "").replace(/\/$/, "");
+const LOCAL_PARAKEET_MODEL = () =>
+  process.env.LOCAL_PARAKEET_MODEL ?? "nvidia/parakeet-tdt-0.6b-v3:q8_0:cpu";
 const LOCAL_WHISPER_URL = () => (process.env.WHISPER_URL ?? "").replace(/\/$/, "");
 const LOCAL_WHISPER_MODEL = () => process.env.LOCAL_WHISPER_MODEL ?? "medium";
 
@@ -17,17 +20,18 @@ export function aiEnabled(): boolean {
 }
 
 export function transcriptionEnabled(): boolean {
-  return LOCAL_WHISPER_URL().length > 0 || aiEnabled();
+  return LOCAL_PARAKEET_URL().length > 0 || LOCAL_WHISPER_URL().length > 0 || aiEnabled();
 }
 
 export function transcriptionModel(): string {
+  if (LOCAL_PARAKEET_URL()) return `parakeet:${LOCAL_PARAKEET_MODEL()}`;
   if (LOCAL_WHISPER_URL()) return `faster-whisper:${LOCAL_WHISPER_MODEL()}:int8`;
   if (aiEnabled()) return OPENAI_WHISPER();
   return "mock";
 }
 
 export function localTranscriptionEnabled(): boolean {
-  return LOCAL_WHISPER_URL().length > 0;
+  return LOCAL_PARAKEET_URL().length > 0 || LOCAL_WHISPER_URL().length > 0;
 }
 
 export const PROMPT_TEMPLATE_VERSION = "gestalt-analysis-v1";
@@ -53,26 +57,30 @@ function ts(seconds: number): string {
 export async function transcribeAudio(
   fileBytes: Buffer,
   fileName: string,
-): Promise<{ segments: TranscriptSegment[]; durationSec: number }> {
-  if (LOCAL_WHISPER_URL()) {
-    const res = await fetch(`${LOCAL_WHISPER_URL()}/transcribe?language=ru`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/octet-stream",
-        "X-Filename": encodeURIComponent(fileName),
-      },
-      body: new Uint8Array(fileBytes),
-      signal: AbortSignal.timeout(4 * 60 * 60 * 1000),
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Local Whisper error ${res.status}: ${text.slice(0, 300)}`);
+): Promise<{ segments: TranscriptSegment[]; durationSec: number; model: string }> {
+  const localErrors: string[] = [];
+  const localServices = [
+    LOCAL_PARAKEET_URL()
+      ? { url: LOCAL_PARAKEET_URL(), model: `parakeet:${LOCAL_PARAKEET_MODEL()}` }
+      : null,
+    LOCAL_WHISPER_URL()
+      ? { url: LOCAL_WHISPER_URL(), model: `faster-whisper:${LOCAL_WHISPER_MODEL()}:int8` }
+      : null,
+  ].filter((service): service is { url: string; model: string } => service !== null);
+
+  for (const service of localServices) {
+    try {
+      const result = await transcribeWithLocalService(service.url, fileBytes, fileName);
+      return { ...result, model: service.model };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      localErrors.push(`${service.model}: ${message}`);
+      console.warn("local transcription service failed, trying fallback", service.model, message);
     }
-    const data = (await res.json()) as {
-      duration?: number;
-      segments?: { start: number; end: number; text: string; avg_logprob?: number }[];
-    };
-    return normalizeTranscript(data);
+  }
+
+  if (localServices.length > 0) {
+    throw new Error(`Local transcription failed: ${localErrors.join(" | ")}`);
   }
 
   if (!aiEnabled()) return mockTranscript();
@@ -97,7 +105,32 @@ export async function transcribeAudio(
     duration?: number;
     segments?: { start: number; end: number; text: string; avg_logprob?: number }[];
   };
-  return normalizeTranscript(data);
+  return { ...normalizeTranscript(data), model: OPENAI_WHISPER() };
+}
+
+async function transcribeWithLocalService(
+  url: string,
+  fileBytes: Buffer,
+  fileName: string,
+): Promise<{ segments: TranscriptSegment[]; durationSec: number }> {
+    const res = await fetch(`${url}/transcribe?language=ru`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "X-Filename": encodeURIComponent(fileName),
+      },
+      body: new Uint8Array(fileBytes),
+      signal: AbortSignal.timeout(4 * 60 * 60 * 1000),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
+    }
+    const data = (await res.json()) as {
+      duration?: number;
+      segments?: { start: number; end: number; text: string; avg_logprob?: number }[];
+    };
+    return normalizeTranscript(data);
 }
 
 function normalizeTranscript(data: {
@@ -296,6 +329,7 @@ export async function analyzeTranscript(
 
 function mockTranscript() {
   return {
+    model: "mock",
     durationSec: 3120,
     segments: [
       { id: "seg-1", start: "00:00:12", end: "00:00:48", speaker: "unknown" as const, text: "Здравствуйте. Как вы сегодня? С чего бы хотелось начать?", confidence: 0.98 },

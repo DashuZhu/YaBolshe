@@ -36,6 +36,8 @@
 !db/**
 !whisper/
 !whisper/**
+!parakeet/
+!parakeet/**
 !docs/
 !docs/**
 

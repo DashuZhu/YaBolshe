@@ -7,7 +7,6 @@ import {
   analyzeTranscript,
   aiEnabled,
   localTranscriptionEnabled,
-  transcriptionModel,
   PROMPT_TEMPLATE_VERSION,
   type TranscriptSegment,
 } from "./openai";
@@ -60,7 +59,7 @@ export async function processSession(sessionId: number): Promise<void> {
       await db.insert(tokenUsage).values({
         sessionId,
         kind: "transcription",
-        model: transcriptionModel(),
+        model: result.model,
         inputTokens: 0,
         outputTokens: 0,
         costEstimate: aiEnabled() && !localTranscriptionEnabled() ? minutes * COST.whisperPerMin : 0,

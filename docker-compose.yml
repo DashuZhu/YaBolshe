@@ -37,6 +37,24 @@ services:
       retries: 20
       start_period: 30m
 
+  parakeet:
+    build: ./parakeet
+    restart: unless-stopped
+    environment:
+      PARAKEET_THREADS: ${PARAKEET_THREADS:-8}
+      PARAKEET_MODEL_DIR: /models
+      PARAKEET_MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-250}
+    expose:
+      - "8000"
+    volumes:
+      - parakeet_models:/models
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 20m
+
   app:
     build: .
     restart: unless-stopped
@@ -44,6 +62,8 @@ services:
       db:
         condition: service_healthy
       whisper:
+        condition: service_healthy
+      parakeet:
         condition: service_healthy
     environment:
       APP_ID: ${APP_ID:-yabolshe}
@@ -53,6 +73,8 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5}
       WHISPER_URL: http://whisper:8000
+      PARAKEET_URL: http://parakeet:8000
+      LOCAL_PARAKEET_MODEL: nvidia/parakeet-tdt-0.6b-v3:q8_0:cpu
       LOCAL_WHISPER_MODEL: ${LOCAL_WHISPER_MODEL:-medium}
       OPENAI_WHISPER_MODEL: ${OPENAI_WHISPER_MODEL:-whisper-1}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-250}
@@ -86,3 +108,4 @@ volumes:
   caddy_data:
   caddy_config:
   whisper_models:
+  parakeet_models:
