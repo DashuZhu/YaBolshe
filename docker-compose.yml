@@ -25,12 +25,17 @@ services:
       WHISPER_COMPUTE_TYPE: ${WHISPER_COMPUTE_TYPE:-int8}
       WHISPER_CPU_THREADS: ${WHISPER_CPU_THREADS:-8}
       WHISPER_NUM_WORKERS: ${WHISPER_NUM_WORKERS:-1}
-      WHISPER_MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-250}
+      WHISPER_BATCH_SIZE: ${WHISPER_BATCH_SIZE:-8}
+      WHISPER_MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-500}
       HF_HOME: /models
     expose:
       - "8000"
     volumes:
       - whisper_models:/models
+    tmpfs:
+      - /tmp:size=2g,mode=1777
+    mem_limit: 5g
+    memswap_limit: 5g
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
       interval: 15s
@@ -44,11 +49,15 @@ services:
     environment:
       PARAKEET_THREADS: ${PARAKEET_THREADS:-8}
       PARAKEET_MODEL_DIR: /models
-      PARAKEET_MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-250}
+      PARAKEET_MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-500}
     expose:
       - "8000"
     volumes:
       - parakeet_models:/models
+    tmpfs:
+      - /tmp:size=2g,mode=1777
+    mem_limit: 7g
+    memswap_limit: 7g
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
       interval: 15s
@@ -78,14 +87,17 @@ services:
       LOCAL_PARAKEET_MODEL: nvidia/parakeet-tdt-0.6b-v3:q8_0:cpu
       LOCAL_WHISPER_MODEL: ${LOCAL_WHISPER_MODEL:-small}
       OPENAI_WHISPER_MODEL: ${OPENAI_WHISPER_MODEL:-whisper-1}
-      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-250}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-500}
       UPLOAD_DIR: /app/data/uploads
+      STORE_TRANSCRIPT: ${STORE_TRANSCRIPT:-false}
       SEED_DEMO_PASSWORD: ${SEED_DEMO_PASSWORD:?Set SEED_DEMO_PASSWORD in .env}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
     expose:
       - "3000"
-    volumes:
-      - uploads_data:/app/data/uploads
+    tmpfs:
+      - /app/data/uploads:size=2g,mode=0700,uid=100,gid=101
+    mem_limit: 3g
+    memswap_limit: 3g
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
       interval: 20s
@@ -112,7 +124,6 @@ services:
 
 volumes:
   db_data:
-  uploads_data:
   caddy_data:
   caddy_config:
   whisper_models:

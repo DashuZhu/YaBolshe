@@ -22,9 +22,8 @@ app.use("/api/trpc/*", async (c) => {
     createContext,
   });
 });
-// Multipart adds a small envelope around the file, so keep the transport limit
-// slightly above the advertised 250 MB file limit enforced in handleUpload.
-app.post("/api/upload", bodyLimit({ maxSize: 255 * 1024 * 1024 }), async (c) => {
+// Keep a small transport margin above the advertised 500 MB file limit.
+app.post("/api/upload", bodyLimit({ maxSize: 505 * 1024 * 1024 }), async (c) => {
   return handleUpload(c.req.raw);
 });
 app.get("/api/health", async (c) => {

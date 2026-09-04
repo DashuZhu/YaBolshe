@@ -37,17 +37,18 @@ async function approvedContextFor(clientId: number): Promise<string> {
   return rows.map((r) => `• ${r.title}: ${r.summary ?? ""}`).join("\n");
 }
 
-async function deleteProcessedMedia(sessionId: number, mediaPath: string | null): Promise<void> {
-  if (!mediaPath) return;
-  try {
-    await unlink(mediaPath);
-    await getDb()
-      .update(sessions)
-      .set({ hasMedia: false, mediaPath: null, mediaSizeBytes: null })
-      .where(eq(sessions.id, sessionId));
+async function deleteTemporaryMedia(sessionId: number, mediaPath: string | null): Promise<void> {
+  if (mediaPath) {
+    await unlink(mediaPath).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") console.warn("could not delete temporary media", sessionId, error);
+    });
+  }
+  await getDb()
+    .update(sessions)
+    .set({ hasMedia: false, mediaPath: null, mediaSizeBytes: null })
+    .where(eq(sessions.id, sessionId));
+  if (mediaPath) {
     await logAudit(null, "system", "media.deleted_after_processing", "session", String(sessionId));
-  } catch (error) {
-    console.warn("could not delete processed media", sessionId, error);
   }
 }
 
@@ -94,10 +95,12 @@ export async function processSession(sessionId: number): Promise<void> {
       return;
     }
 
+    // The verbatim transcript is needed only in memory while drafts are built.
+    // Persist it only when an operator explicitly opts in.
     await db
       .update(sessions)
       .set({
-        transcriptJson: segments,
+        transcriptJson: process.env.STORE_TRANSCRIPT === "true" ? segments : null,
         durationMin: Math.max(1, Math.round(durationSec / 60)),
       })
       .where(eq(sessions.id, sessionId));
@@ -237,7 +240,6 @@ export async function processSession(sessionId: number): Promise<void> {
     });
 
     await setStatus(sessionId, "draft_ready");
-    await deleteProcessedMedia(sessionId, session.mediaPath);
     await logAudit(null, "system", aiEnabled() ? "ai.analysis_complete" : "local.draft_complete", "session", String(sessionId), {
       model,
       inputTokens,
@@ -249,6 +251,12 @@ export async function processSession(sessionId: number): Promise<void> {
     await setStatus(sessionId, "failed", message.slice(0, 1000));
     await logAudit(null, "system", "ai.analysis_failed", "session", String(sessionId), {
       error: message.slice(0, 300),
+    });
+  } finally {
+    // Privacy boundary: source audio/video is temporary and is removed after
+    // success, failure, or analysis errors. A failed job must be re-uploaded.
+    await deleteTemporaryMedia(sessionId, session.mediaPath).catch((error) => {
+      console.error("temporary media cleanup failed", sessionId, error);
     });
   }
 }

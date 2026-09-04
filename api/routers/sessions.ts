@@ -176,7 +176,14 @@ export const sessionsRouter = createRouter({
   reprocess: therapistQuery
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await assertTherapistOwns(ctx.user.id, input.id);
+      const session = await assertTherapistOwns(ctx.user.id, input.id);
+      const transcript = (session.transcriptJson as TranscriptSegmentDTO[] | null) ?? [];
+      if (!session.hasMedia && transcript.length === 0) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Исходная запись уже удалена для защиты данных. Загрузите файл ещё раз.",
+        });
+      }
       await getDb().update(sessions).set({ status: "queued" }).where(eq(sessions.id, input.id));
       enqueueSession(input.id);
       return { ok: true };

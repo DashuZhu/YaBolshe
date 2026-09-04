@@ -6,7 +6,7 @@ import { GlassCard } from '@/components/brand'
 import { trpc } from '@/lib/store'
 import { Link } from 'react-router'
 
-const MAX_UPLOAD_BYTES = 250 * 1024 * 1024
+const MAX_UPLOAD_BYTES = 500 * 1024 * 1024
 
 type Recording = {
   file: File
@@ -89,7 +89,7 @@ export default function Upload() {
       status: 'ready',
     }))
     setRecordings(prepared)
-    if (tooLarge.length > 0) setError(`${tooLarge.length} файл(а) больше 250 МБ и не добавлены.`)
+    if (tooLarge.length > 0) setError(`${tooLarge.length} файл(а) больше 500 МБ и не добавлены.`)
     if (prepared.length > 0) void start(prepared)
   }
 
@@ -157,7 +157,7 @@ export default function Upload() {
         <div className="mt-6 flex items-start gap-3 rounded-2xl border border-brand-success/40 bg-brand-success/10 px-4 py-3">
           <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" />
           <p className="text-sm text-emerald-900">
-            Одинаковые имена файлов попадут в карточку одного клиента. Исходный файл удалится после успешной обработки.
+            Одинаковые имена файлов попадут в карточку одного клиента. Запись и дословная расшифровка не хранятся: останутся только черновики выводов и дорожной карты.
           </p>
         </div>
 
@@ -186,7 +186,7 @@ export default function Upload() {
           >
             <UploadCloud className="mb-3 h-10 w-10 text-brand-pink" />
             <p className="font-bold text-brand-ink">Выбрать запись или несколько записей</p>
-            <p className="mt-1 text-sm text-brand-mute">до 250 МБ каждая · аудио и видео</p>
+            <p className="mt-1 text-sm text-brand-mute">до 500 МБ каждая · аудио и видео</p>
           </button>
 
           {recordings.length > 0 && (
@@ -207,7 +207,7 @@ export default function Upload() {
                       <p className="truncate text-xs text-brand-mute">{item.file.name} · {(item.file.size / 1024 / 1024).toFixed(1)} МБ</p>
                       <p className="mt-2 text-sm font-bold text-brand-ink">Клиент: {item.clientName}</p>
                       {item.status === 'uploading' && <p className="mt-2 text-xs text-brand-mute">Загрузка: {item.progress}%</p>}
-                      {item.status === 'processing' && <p className="mt-2 text-xs font-semibold text-emerald-700">Запись сохранена. Открываем живой экран обработки…</p>}
+                      {item.status === 'processing' && <p className="mt-2 text-xs font-semibold text-emerald-700">Запись принята во временную обработку…</p>}
                       {item.error && <p className="mt-2 text-xs font-semibold text-red-700">{item.error}</p>}
                     </div>
                   </div>

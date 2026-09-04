@@ -89,7 +89,7 @@ export default function SessionDetail() {
             {session.approvedAt && <p className="mt-1 text-xs text-emerald-700">Подтверждено: {session.approvedAt}{session.sentAt && ` · отправлено клиенту: ${session.sentAt}`}</p>}
           </div>
           <div className="flex flex-wrap gap-2">
-            {failed && (
+            {failed && (session.hasMedia || session.transcript.length > 0) && (
               <button
                 onClick={() => reprocessMut.mutate({ id: sessionId })}
                 className="btn-soft flex items-center gap-2 rounded-2xl px-5 py-2.5 text-xs font-bold text-brand-deep"
@@ -125,7 +125,7 @@ export default function SessionDetail() {
         )}
         {failed && session.processingError && (
           <p className="mt-4 rounded-2xl bg-brand-danger/10 px-4 py-3 text-sm text-red-800">
-            Ошибка обработки: {session.processingError}
+            Ошибка обработки: {session.processingError}{!session.hasMedia && session.transcript.length === 0 && ' Запись уже удалена для защиты данных — загрузите её ещё раз.'}
           </p>
         )}
       </GlassCard>
@@ -142,7 +142,7 @@ export default function SessionDetail() {
                 Страница обновляется сама. Её можно закрыть: обработка продолжится на сервере, а готовый результат появится в дашборде.
               </p>
               <div className="mt-4 grid gap-2 text-xs sm:grid-cols-3">
-                <span className="rounded-xl bg-brand-success/15 px-3 py-2 font-semibold text-emerald-800">1. Файл сохранён</span>
+                <span className="rounded-xl bg-brand-success/15 px-3 py-2 font-semibold text-emerald-800">1. Файл принят временно</span>
                 <span className={cn('rounded-xl px-3 py-2 font-semibold', session.status === 'analyzing' ? 'bg-brand-success/15 text-emerald-800' : 'bg-brand-lav/20 text-brand-deep')}>2. Расшифровка</span>
                 <span className="rounded-xl bg-white/70 px-3 py-2 font-semibold text-brand-mute">3. Черновики и маршрут</span>
               </div>
@@ -188,12 +188,14 @@ export default function SessionDetail() {
         >
           <BrainCircuit className="h-4 w-4" /> Разбор записи
         </button>
-        <button
-          onClick={() => setView('transcript')}
-          className={cn('flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all', view === 'transcript' ? 'btn-3d text-white' : 'text-brand-mute hover:text-brand-deep')}
-        >
-          <Quote className="h-4 w-4" /> Расшифровка
-        </button>
+        {session.transcript.length > 0 && (
+          <button
+            onClick={() => setView('transcript')}
+            className={cn('flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all', view === 'transcript' ? 'btn-3d text-white' : 'text-brand-mute hover:text-brand-deep')}
+          >
+            <Quote className="h-4 w-4" /> Расшифровка
+          </button>
+        )}
       </div>
 
       {/* Transcript */}

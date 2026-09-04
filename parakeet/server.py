@@ -18,7 +18,7 @@ MODEL_NAME = "nvidia/parakeet-tdt-0.6b-v3:q8_0:cpu"
 
 app = FastAPI(title="YaBolshe local Parakeet", docs_url=None, redoc_url=None)
 transcription_lock = asyncio.Semaphore(1)
-MAX_UPLOAD_BYTES = int(os.getenv("PARAKEET_MAX_UPLOAD_MB", "250")) * 1024 * 1024
+MAX_UPLOAD_BYTES = int(os.getenv("PARAKEET_MAX_UPLOAD_MB", "500")) * 1024 * 1024
 
 
 @app.get("/health")

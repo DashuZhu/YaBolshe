@@ -8,7 +8,7 @@ import { enqueueSession } from "./ai/pipeline";
 import { logAudit } from "./queries/audit";
 
 const UPLOAD_DIR = () => process.env.UPLOAD_DIR ?? join(process.cwd(), "data", "uploads");
-const MAX_BYTES = () => Number(process.env.MAX_UPLOAD_MB ?? 250) * 1024 * 1024;
+const MAX_BYTES = () => Number(process.env.MAX_UPLOAD_MB ?? 500) * 1024 * 1024;
 const ALLOWED_EXT = new Set([
   ".mp3", ".wav", ".m4a", ".aac", ".flac", ".opus", ".ogg",
   ".mp4", ".mov", ".mkv", ".avi", ".mpeg", ".mpga", ".webm",

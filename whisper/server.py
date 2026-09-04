@@ -8,24 +8,26 @@ from urllib.parse import unquote
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from faster_whisper import WhisperModel
+from faster_whisper import BatchedInferencePipeline, WhisperModel
 
 
-MODEL_NAME = os.getenv("WHISPER_MODEL", "medium")
+MODEL_NAME = os.getenv("WHISPER_MODEL", "small")
 COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
 CPU_THREADS = int(os.getenv("WHISPER_CPU_THREADS", "8"))
 NUM_WORKERS = int(os.getenv("WHISPER_NUM_WORKERS", "1"))
+BATCH_SIZE = int(os.getenv("WHISPER_BATCH_SIZE", "8"))
 MODEL_DIR = os.getenv("HF_HOME", "/models")
-MAX_UPLOAD_BYTES = int(os.getenv("WHISPER_MAX_UPLOAD_MB", "250")) * 1024 * 1024
+MAX_UPLOAD_BYTES = int(os.getenv("WHISPER_MAX_UPLOAD_MB", "500")) * 1024 * 1024
 
 app = FastAPI(title="YaBolshe local Whisper", docs_url=None, redoc_url=None)
 model: WhisperModel | None = None
+batched_model: BatchedInferencePipeline | None = None
 transcription_lock = asyncio.Semaphore(1)
 
 
 @app.on_event("startup")
 def load_model() -> None:
-    global model
+    global model, batched_model
     model = WhisperModel(
         MODEL_NAME,
         device="cpu",
@@ -34,24 +36,27 @@ def load_model() -> None:
         num_workers=NUM_WORKERS,
         download_root=MODEL_DIR,
     )
+    batched_model = BatchedInferencePipeline(model=model)
 
 
 @app.get("/health")
 def health() -> dict:
     return {
-        "ok": model is not None,
+        "ok": model is not None and batched_model is not None,
         "model": MODEL_NAME,
         "compute_type": COMPUTE_TYPE,
+        "batch_size": BATCH_SIZE,
         "busy": transcription_lock.locked(),
     }
 
 
 def run_transcription(path: str, language: str) -> dict:
-    if model is None:
+    if batched_model is None:
         raise RuntimeError("model is not loaded")
 
-    segments, info = model.transcribe(
+    segments, info = batched_model.transcribe(
         path,
+        batch_size=BATCH_SIZE,
         language=language,
         task="transcribe",
         beam_size=1,

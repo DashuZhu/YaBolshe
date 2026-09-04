@@ -241,7 +241,7 @@ async function transcribeWithLocalFile(
       "Content-Type": "application/octet-stream",
       "X-Filename": encodeURIComponent(fileName),
     },
-    body: createReadStream(filePath) as unknown as BodyInit,
+    body: createReadStream(filePath) as unknown as RequestInit["body"],
     // Required by Node fetch for a streaming request body.
     duplex: "half",
     signal: AbortSignal.timeout(4 * 60 * 60 * 1000),
