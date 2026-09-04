@@ -36,7 +36,12 @@ def load_model() -> None:
 
 @app.get("/health")
 def health() -> dict:
-    return {"ok": model is not None, "model": MODEL_NAME, "compute_type": COMPUTE_TYPE}
+    return {
+        "ok": model is not None,
+        "model": MODEL_NAME,
+        "compute_type": COMPUTE_TYPE,
+        "busy": transcription_lock.locked(),
+    }
 
 
 def run_transcription(path: str, language: str) -> dict:
@@ -47,9 +52,9 @@ def run_transcription(path: str, language: str) -> dict:
         path,
         language=language,
         task="transcribe",
-        beam_size=5,
+        beam_size=1,
         vad_filter=True,
-        condition_on_previous_text=True,
+        condition_on_previous_text=False,
     )
     result = []
     for segment in segments:

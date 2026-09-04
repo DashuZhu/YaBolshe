@@ -15,7 +15,7 @@ const LOCAL_PARAKEET_URL = () => (process.env.PARAKEET_URL ?? "").replace(/\/$/,
 const LOCAL_PARAKEET_MODEL = () =>
   process.env.LOCAL_PARAKEET_MODEL ?? "nvidia/parakeet-tdt-0.6b-v3:q8_0:cpu";
 const LOCAL_WHISPER_URL = () => (process.env.WHISPER_URL ?? "").replace(/\/$/, "");
-const LOCAL_WHISPER_MODEL = () => process.env.LOCAL_WHISPER_MODEL ?? "medium";
+const LOCAL_WHISPER_MODEL = () => process.env.LOCAL_WHISPER_MODEL ?? "small";
 
 export function aiEnabled(): boolean {
   return API_KEY().length > 0;
@@ -46,9 +46,10 @@ export async function transcriptionHealth() {
       const started = Date.now();
       try {
         const response = await fetch(`${service.url}/health`, { signal: AbortSignal.timeout(5000) });
-        return { name: service.name, ok: response.ok, responseMs: Date.now() - started };
+        const data = (await response.json().catch(() => ({}))) as { busy?: boolean };
+        return { name: service.name, ok: response.ok, busy: data.busy === true, responseMs: Date.now() - started };
       } catch {
-        return { name: service.name, ok: false, responseMs: Date.now() - started };
+        return { name: service.name, ok: false, busy: false, responseMs: Date.now() - started };
       }
     }),
   );
@@ -148,7 +149,19 @@ export async function transcribeAudioFile(
 
   for (const service of localServices) {
     try {
-      const result = await transcribeWithLocalFile(service.url, filePath, fileName);
+      await waitUntilServiceIsFree(service.url);
+      let result: { segments: TranscriptSegment[]; durationSec: number };
+      try {
+        result = await transcribeWithLocalFile(service.url, filePath, fileName);
+      } catch (firstError) {
+        // A disconnected request can continue inside the model container. Give
+        // its lock time to become visible, wait for it to finish, and retry the
+        // same primary service instead of immediately loading the fallback.
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        if (!(await serviceBusy(service.url))) throw firstError;
+        await waitUntilServiceIsFree(service.url);
+        result = await transcribeWithLocalFile(service.url, filePath, fileName);
+      }
       assertUsefulTranscript(result);
       return { ...result, model: service.model };
     } catch (error) {
@@ -165,6 +178,30 @@ export async function transcribeAudioFile(
   // The external API requires multipart data. This fallback is only used when
   // local transcription is not configured.
   return transcribeAudio(await readFile(filePath), fileName);
+}
+
+async function serviceBusy(url: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(5000) });
+    if (!response.ok) return false;
+    const data = (await response.json()) as { busy?: boolean };
+    return data.busy === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * An app restart can disconnect from a transcription that is still running in
+ * the model container. Waiting here prevents a second model from processing
+ * the same private recording at the same time and exhausting the server.
+ */
+async function waitUntilServiceIsFree(url: string): Promise<void> {
+  const deadline = Date.now() + 4 * 60 * 60 * 1000;
+  while (await serviceBusy(url)) {
+    if (Date.now() >= deadline) throw new Error("сервис расшифровки слишком долго занят");
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+  }
 }
 
 async function transcribeWithLocalService(
@@ -336,6 +373,83 @@ const analysisSchema = z.object({
 });
 
 export type SessionAnalysis = z.infer<typeof analysisSchema>;
+
+const LOCAL_STOP_WORDS = new Set([
+  "который", "которая", "которые", "потому", "поэтому", "просто", "очень", "сейчас", "тогда",
+  "этого", "этой", "такой", "такая", "можно", "нужно", "будет", "было", "были", "есть", "если",
+  "чтобы", "когда", "меня", "тебя", "себя", "свои", "своей", "своего", "говорит", "говорю", "знаю",
+]);
+
+/** A private, evidence-only fallback used when an external analysis model is not configured. */
+export function buildLocalDraft(segments: TranscriptSegment[]): SessionAnalysis {
+  const meaningful = segments.filter((segment) => segment.text.trim().length >= 24);
+  const selected = meaningful.slice(0, 3);
+  const summary = selected.map((segment) => segment.text.trim()).join(" ").slice(0, 900);
+  const frequencies = new Map<string, number>();
+  for (const segment of meaningful) {
+    const words = segment.text.toLocaleLowerCase("ru-RU").match(/[а-яё]{5,}/g) ?? [];
+    for (const word of new Set(words)) {
+      if (!LOCAL_STOP_WORDS.has(word)) frequencies.set(word, (frequencies.get(word) ?? 0) + 1);
+    }
+  }
+  const topicWords = [...frequencies.entries()]
+    .filter(([, count]) => count >= 2)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([word]) => word);
+  const draftThemes = topicWords.map((word) => {
+    const evidenceSegments = meaningful.filter((segment) => segment.text.toLocaleLowerCase("ru-RU").includes(word)).slice(0, 2);
+    return {
+      title: `Тема для проверки: ${word}`,
+      description: evidenceSegments.map((segment) => segment.text).join(" ").slice(0, 500),
+      evidence: evidenceSegments.map((segment) => segment.id),
+      confidence: "low" as const,
+    };
+  });
+  if (draftThemes.length === 0 && selected[0]) {
+    draftThemes.push({
+      title: "Основная тема для проверки",
+      description: selected[0].text.slice(0, 500),
+      evidence: [selected[0].id],
+      confidence: "low",
+    });
+  }
+  const questions = meaningful
+    .filter((segment) => segment.text.includes("?"))
+    .slice(-5)
+    .map((segment) => segment.text.slice(0, 300));
+  const actionSegments = meaningful.filter((segment) =>
+    /(попроб|до следующ|домашн|договор|сдела|понаблюд|обрат.*вниман)/i.test(segment.text),
+  ).slice(-4);
+  return analysisSchema.parse({
+    summary_short: summary || "Расшифровка готова. Содержательные фрагменты требуют проверки терапевтом.",
+    summary_long: summary,
+    client_friendly_summary: "Черновик для клиента появится после проверки терапевтом.",
+    themes: draftThemes,
+    emotions: [],
+    needs: [],
+    patterns: [],
+    insights: selected.length > 0 ? [{
+      title: "Ключевые фрагменты сессии",
+      description: summary,
+      client_action: "explore",
+      evidence: selected.map((segment) => segment.id),
+      confidence: "low",
+    }] : [],
+    homework: actionSegments.map((segment) => ({
+      title: "Возможный следующий шаг",
+      description: segment.text.slice(0, 500),
+      purpose: "Проверить формулировку по расшифровке",
+      frequency: "по договорённости",
+      due_date: null,
+    })),
+    agreements: [],
+    risk_flags: [],
+    dynamics_vs_previous: { summary: "Для сравнения нужна проверка терапевтом.", improved: [], stable: [], new_topics: topicWords },
+    therapist_questions: questions,
+    uncertainties: ["Черновик собран локально из текста без внешней AI-модели; выводы и формулировки нужно проверить."],
+  });
+}
 
 const SYSTEM_PROMPT = `Ты — ассистент гештальт-терапевта. Анализируешь расшифровку терапевтической сессии на русском языке.
 

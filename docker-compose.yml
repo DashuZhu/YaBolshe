@@ -21,7 +21,7 @@ services:
     build: ./whisper
     restart: unless-stopped
     environment:
-      WHISPER_MODEL: ${LOCAL_WHISPER_MODEL:-medium}
+      WHISPER_MODEL: ${LOCAL_WHISPER_MODEL:-small}
       WHISPER_COMPUTE_TYPE: ${WHISPER_COMPUTE_TYPE:-int8}
       WHISPER_CPU_THREADS: ${WHISPER_CPU_THREADS:-8}
       WHISPER_NUM_WORKERS: ${WHISPER_NUM_WORKERS:-1}
@@ -76,7 +76,7 @@ services:
       WHISPER_URL: http://whisper:8000
       PARAKEET_URL: http://parakeet:8000
       LOCAL_PARAKEET_MODEL: nvidia/parakeet-tdt-0.6b-v3:q8_0:cpu
-      LOCAL_WHISPER_MODEL: ${LOCAL_WHISPER_MODEL:-medium}
+      LOCAL_WHISPER_MODEL: ${LOCAL_WHISPER_MODEL:-small}
       OPENAI_WHISPER_MODEL: ${OPENAI_WHISPER_MODEL:-whisper-1}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-250}
       UPLOAD_DIR: /app/data/uploads

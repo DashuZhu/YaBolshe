@@ -98,6 +98,7 @@ export default function Upload() {
 
     setPhase('uploading')
     const clientIds = new Map<string, string>()
+    const completedSessionIds: number[] = []
     let failed = 0
 
     for (let index = 0; index < batch.length; index += 1) {
@@ -129,6 +130,7 @@ export default function Upload() {
 
         await uploadRecording(item.file, sessionId, (progress) => updateRecording(index, { progress }))
         updateRecording(index, { status: 'processing', progress: 100 })
+        completedSessionIds.push(sessionId)
       } catch (caught) {
         failed += 1
         updateRecording(index, {
@@ -143,6 +145,7 @@ export default function Upload() {
     void utils.sessions.list.invalidate()
     setPhase('done')
     if (failed > 0) setError(`Не удалось загрузить ${failed} файл(а). Остальные записи отправлены на обработку.`)
+    if (failed === 0 && completedSessionIds.length === 1) navigate(`/t/sessions/${completedSessionIds[0]}`)
   }
 
   return (
@@ -204,7 +207,7 @@ export default function Upload() {
                       <p className="truncate text-xs text-brand-mute">{item.file.name} · {(item.file.size / 1024 / 1024).toFixed(1)} МБ</p>
                       <p className="mt-2 text-sm font-bold text-brand-ink">Клиент: {item.clientName}</p>
                       {item.status === 'uploading' && <p className="mt-2 text-xs text-brand-mute">Загрузка: {item.progress}%</p>}
-                      {item.status === 'processing' && <p className="mt-2 text-xs font-semibold text-emerald-700">Запись сохранена и обрабатывается</p>}
+                      {item.status === 'processing' && <p className="mt-2 text-xs font-semibold text-emerald-700">Запись сохранена. Открываем живой экран обработки…</p>}
                       {item.error && <p className="mt-2 text-xs font-semibold text-red-700">{item.error}</p>}
                     </div>
                   </div>
@@ -223,7 +226,7 @@ export default function Upload() {
           {phase === 'done' && (
             <div className="mt-6 flex flex-wrap items-center gap-3">
               <button onClick={() => navigate('/t')} className="btn-3d rounded-2xl px-8 py-3.5 text-sm font-bold text-white">
-                Открыть список сессий
+                Смотреть обработку
               </button>
               <p className="text-xs text-brand-mute">Для повторной попытки выберите неудавшиеся файлы ещё раз.</p>
             </div>

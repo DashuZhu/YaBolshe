@@ -1,9 +1,10 @@
 import { eq, and, desc, inArray } from "drizzle-orm";
 import { getDb } from "../queries/connection";
-import { sessions, insights, themes, homework, agreements, tokenUsage } from "@db/schema";
+import { sessions, insights, themes, homework, agreements, roadmaps, tokenUsage } from "@db/schema";
 import {
   transcribeAudioFile,
   analyzeTranscript,
+  buildLocalDraft,
   aiEnabled,
   localTranscriptionEnabled,
   PROMPT_TEMPLATE_VERSION,
@@ -61,10 +62,17 @@ export async function processSession(sessionId: number): Promise<void> {
 
   try {
     // 1. transcribe
-    await setStatus(sessionId, "transcribing");
-    let segments: TranscriptSegment[];
+    const savedSegments = Array.isArray(session.transcriptJson)
+      ? session.transcriptJson as TranscriptSegment[]
+      : [];
+    let segments: TranscriptSegment[] = savedSegments;
     let durationSec = session.durationMin * 60;
-    if (session.hasMedia && session.mediaPath) {
+    if (savedSegments.length > 0) {
+      // Rebuild drafts directly from the saved transcript. This makes repeat
+      // analysis quick and works after the original media has been deleted.
+      await setStatus(sessionId, "analyzing");
+    } else if (session.hasMedia && session.mediaPath) {
+      await setStatus(sessionId, "transcribing");
       const result = await transcribeAudioFile(
         session.mediaPath,
         session.mediaPath.split("/").pop() ?? "audio.mp3",
@@ -94,21 +102,12 @@ export async function processSession(sessionId: number): Promise<void> {
       })
       .where(eq(sessions.id, sessionId));
 
-    // A transcript is still a useful, honest result when text analysis is not
-    // configured. Never replace real session content with demo conclusions.
-    if (!aiEnabled()) {
-      await setStatus(sessionId, "draft_ready");
-      await logAudit(null, "system", "transcription.complete_without_analysis", "session", String(sessionId), {
-        reason: "ai_not_configured",
-      });
-      await deleteProcessedMedia(sessionId, session.mediaPath);
-      return;
-    }
-
     // 2. analyze
     await setStatus(sessionId, "analyzing");
-    const context = await approvedContextFor(session.clientId);
-    const { analysis, model, inputTokens, outputTokens } = await analyzeTranscript(segments, context);
+    const analysisResult = aiEnabled()
+      ? await analyzeTranscript(segments, await approvedContextFor(session.clientId))
+      : { analysis: buildLocalDraft(segments), model: "local-structured-draft-v1", inputTokens: 0, outputTokens: 0 };
+    const { analysis, model, inputTokens, outputTokens } = analysisResult;
 
     // Reprocessing replaces an earlier draft instead of duplicating its cards.
     await db.delete(insights).where(eq(insights.sessionId, sessionId));
@@ -189,6 +188,42 @@ export async function processSession(sessionId: number): Promise<void> {
       });
     }
 
+    // 4. keep the client's roadmap in sync as a therapist-only draft.
+    const roadmapGoals = analysis.needs.length > 0
+      ? analysis.needs.slice(0, 4).map((need) => ({ goal: need.label, progress: 0, note: need.description }))
+      : analysis.themes.slice(0, 3).map((theme) => ({ goal: theme.title, progress: 0, note: theme.description }));
+    const roadmapNextSteps = [
+      ...analysis.homework.slice(0, 4).map((item) => item.title),
+      ...analysis.therapist_questions.slice(0, 3),
+    ];
+    const roadmapDraft = {
+      currentFocus: analysis.summary_short,
+      goalsJson: roadmapGoals,
+      stagesJson: analysis.themes.slice(0, 4).map((theme, index) => ({
+        title: theme.title,
+        status: index === 0 ? "current" as const : "next" as const,
+      })),
+      resourcesJson: analysis.dynamics_vs_previous.improved,
+      obstaclesJson: analysis.patterns.slice(0, 4).map((pattern) => pattern.title),
+      nextStepsJson: roadmapNextSteps.length > 0 ? roadmapNextSteps : ["Проверить ключевые фрагменты расшифровки"],
+      experimentsJson: [
+        ...analysis.agreements.filter((item) => item.type === "experiment").map((item) => item.text),
+        ...analysis.homework.slice(0, 3).map((item) => item.description),
+      ],
+      reviewDate: "После следующей сессии",
+      draftPending: true,
+      approved: false,
+      updatedAt: new Date(),
+    };
+    const existingRoadmap = await db.query.roadmaps.findFirst({ where: eq(roadmaps.clientId, session.clientId) });
+    if (existingRoadmap) {
+      await db.update(roadmaps)
+        .set({ ...roadmapDraft, version: existingRoadmap.version + 1 })
+        .where(eq(roadmaps.id, existingRoadmap.id));
+    } else {
+      await db.insert(roadmaps).values({ clientId: session.clientId, ...roadmapDraft });
+    }
+
     await db.insert(tokenUsage).values({
       sessionId,
       kind: "analysis",
@@ -203,7 +238,7 @@ export async function processSession(sessionId: number): Promise<void> {
 
     await setStatus(sessionId, "draft_ready");
     await deleteProcessedMedia(sessionId, session.mediaPath);
-    await logAudit(null, "system", "ai.analysis_complete", "session", String(sessionId), {
+    await logAudit(null, "system", aiEnabled() ? "ai.analysis_complete" : "local.draft_complete", "session", String(sessionId), {
       model,
       inputTokens,
       outputTokens,

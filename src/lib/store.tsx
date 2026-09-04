@@ -46,11 +46,11 @@ export function useApp() {
 // ---- data hooks (thin wrappers over tRPC) ----
 
 export function useSessions() {
-  return trpc.sessions.list.useQuery(undefined, { refetchInterval: 8000 })
+  return trpc.sessions.list.useQuery(undefined, { refetchInterval: 3000 })
 }
 
 export function useSession(id: number) {
-  return trpc.sessions.get.useQuery({ id }, { enabled: id > 0, refetchInterval: 8000 })
+  return trpc.sessions.get.useQuery({ id }, { enabled: id > 0, refetchInterval: 3000 })
 }
 
 export function useClients() {

@@ -2,7 +2,7 @@ import { useParams, Link } from 'react-router'
 import { useState } from 'react'
 import {
   ArrowLeft, CheckCircle2, Send, Mic, User, HelpCircle, AlertTriangle,
-  BrainCircuit, Quote, ShieldAlert, CircleHelp, RotateCcw,
+  BrainCircuit, Quote, ShieldAlert, CircleHelp, RotateCcw, Loader2, Map,
 } from 'lucide-react'
 import { AppShell } from '@/components/shell'
 import { GlassCard, SectionHeader } from '@/components/brand'
@@ -61,6 +61,7 @@ export default function SessionDetail() {
   const client = (clientsQ.data ?? []).find((c) => c.id === session.clientId)
   const meta = sessionStatusMeta[session.status]
   const isDraft = ['draft_ready', 'therapist_review'].includes(session.status)
+  const isProcessing = ['uploaded', 'queued', 'extracting_audio', 'transcribing', 'diarizing', 'analyzing'].includes(session.status)
   const failed = ['failed', 'requires_manual_fix'].includes(session.status)
   const approvedInsights = session.insights.filter((i) => i.approved).length
   const totalTokens = session.tokens.input + session.tokens.output
@@ -118,7 +119,7 @@ export default function SessionDetail() {
         </div>
         {isDraft && (
           <p className="mt-4 rounded-2xl bg-brand-lav/15 px-4 py-3 text-sm text-brand-deep">
-            Это черновик AI. Проверьте и при необходимости скорректируйте материалы — клиент увидит только то,
+            Это черновик по расшифровке. Проверьте и при необходимости скорректируйте материалы — клиент увидит только то,
             что вы подтвердите. Сейчас подтверждено инсайтов: {approvedInsights} из {session.insights.length}.
           </p>
         )}
@@ -128,6 +129,38 @@ export default function SessionDetail() {
           </p>
         )}
       </GlassCard>
+
+      {isProcessing && (
+        <GlassCard className="mb-6 border-2 border-brand-lav/40">
+          <div className="flex items-start gap-4">
+            <Loader2 className="mt-0.5 h-6 w-6 shrink-0 animate-spin text-brand-violet" />
+            <div className="flex-1">
+              <p className="font-bold text-brand-deep">
+                {session.status === 'analyzing' ? 'Расшифровка готова — собираем черновики' : 'Запись расшифровывается'}
+              </p>
+              <p className="mt-1 text-sm text-brand-mute">
+                Страница обновляется сама. Её можно закрыть: обработка продолжится на сервере, а готовый результат появится в дашборде.
+              </p>
+              <div className="mt-4 grid gap-2 text-xs sm:grid-cols-3">
+                <span className="rounded-xl bg-brand-success/15 px-3 py-2 font-semibold text-emerald-800">1. Файл сохранён</span>
+                <span className={cn('rounded-xl px-3 py-2 font-semibold', session.status === 'analyzing' ? 'bg-brand-success/15 text-emerald-800' : 'bg-brand-lav/20 text-brand-deep')}>2. Расшифровка</span>
+                <span className="rounded-xl bg-white/70 px-3 py-2 font-semibold text-brand-mute">3. Черновики и маршрут</span>
+              </div>
+            </div>
+          </div>
+        </GlassCard>
+      )}
+
+      {isDraft && (
+        <div className="mb-6 grid gap-3 sm:grid-cols-2">
+          <button onClick={() => setView('analysis')} className="btn-soft flex items-center justify-between rounded-2xl px-5 py-4 text-left text-sm font-bold text-brand-deep">
+            Проверить результаты <BrainCircuit className="h-5 w-5 text-brand-violet" />
+          </button>
+          <Link to={`/t/roadmap?client=${session.clientId}`} className="btn-soft flex items-center justify-between rounded-2xl px-5 py-4 text-sm font-bold text-brand-deep">
+            Открыть дорожную карту <Map className="h-5 w-5 text-brand-violet" />
+          </Link>
+        </div>
+      )}
 
       {/* Risk flags */}
       {session.riskFlags.length > 0 && (
@@ -153,7 +186,7 @@ export default function SessionDetail() {
           onClick={() => setView('analysis')}
           className={cn('flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all', view === 'analysis' ? 'btn-3d text-white' : 'text-brand-mute hover:text-brand-deep')}
         >
-          <BrainCircuit className="h-4 w-4" /> AI-анализ
+          <BrainCircuit className="h-4 w-4" /> Разбор записи
         </button>
         <button
           onClick={() => setView('transcript')}
@@ -303,7 +336,7 @@ export default function SessionDetail() {
           {tab === 'states' && (
             <div className="grid gap-5 lg:grid-cols-2">
               <GlassCard>
-                <SectionHeader title="Чувства" subtitle="как их назвал AI по тексту сессии" />
+                <SectionHeader title="Чувства" subtitle="черновик по тексту сессии" />
                 <ul className="space-y-3">
                   {session.emotions.map((e, i) => (
                     <li key={i} className="flex items-center justify-between gap-3 rounded-2xl bg-white/70 p-4">
@@ -376,7 +409,7 @@ export default function SessionDetail() {
           {tab === 'questions' && (
             <div className="grid gap-5 lg:grid-cols-2">
               <GlassCard>
-                <SectionHeader title="Вопросы к следующей сессии" subtitle="предложения AI — на ваше усмотрение" />
+              <SectionHeader title="Вопросы к следующей сессии" subtitle="предложения по записи — на ваше усмотрение" />
                 <ul className="space-y-3">
                   {session.therapistQuestions.map((q, i) => (
                     <li key={i} className="flex gap-3 rounded-2xl bg-white/70 p-4 text-sm text-brand-ink">
@@ -387,7 +420,7 @@ export default function SessionDetail() {
                 </ul>
               </GlassCard>
               <GlassCard>
-                <SectionHeader title="Где AI не уверен" subtitle="честные пометки неопределённости" />
+                <SectionHeader title="Что нужно проверить" subtitle="честные пометки неопределённости" />
                 {session.uncertainties.length === 0 ? (
                   <p className="text-sm text-brand-mute">Явных неопределённостей не отмечено.</p>
                 ) : (

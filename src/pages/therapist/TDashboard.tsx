@@ -149,7 +149,7 @@ export default function TDashboard() {
 
         {/* Processing queue */}
         <GlassCard>
-          <SectionHeader title="Очередь обработки" subtitle="Асинхронный pipeline: аудио → текст → AI" />
+          <SectionHeader title="Обработка записей" subtitle="Файл → расшифровка → черновики разделов → дорожная карта" />
           {inQueue.length === 0 ? (
             <div className="rounded-2xl bg-white/60 p-4 text-sm text-brand-mute">
               <p className="flex items-center gap-2">
@@ -161,8 +161,8 @@ export default function TDashboard() {
             <ul className="space-y-3">
               {inQueue.map((s) => (
                 <li key={s.id}>
-                  <Link to={`/t/sessions/${s.id}`} className="flex items-center justify-between rounded-2xl bg-white/70 p-4 text-sm font-semibold text-brand-ink">
-                    {s.title}
+                  <Link to={`/t/sessions/${s.id}`} className="flex items-center justify-between gap-3 rounded-2xl bg-white/70 p-4 text-sm font-semibold text-brand-ink">
+                    <span><span className="block">{s.title}</span><span className="mt-1 block text-xs font-normal text-brand-mute">Нажмите, чтобы видеть живой статус</span></span>
                     <Pill tone="violet" className="pulse-soft">{sessionStatusMeta[s.status].label}</Pill>
                   </Link>
                 </li>

@@ -24,11 +24,11 @@ def health(response: Response) -> dict:
     try:
         ready = httpx.get(f"{NEMO_URL}/ready", timeout=5.0)
         if ready.status_code == 200 and ready.json().get("ready") is True:
-            return {"ok": True, "model": MODEL_NAME}
+            return {"ok": True, "model": MODEL_NAME, "busy": transcription_lock.locked()}
     except Exception:
         pass
     response.status_code = 503
-    return {"ok": False, "model": MODEL_NAME}
+    return {"ok": False, "model": MODEL_NAME, "busy": transcription_lock.locked()}
 
 
 def _clean_text(tokens: list[str]) -> str:
