@@ -23,6 +23,11 @@ import {
 import { logAudit } from "../queries/audit";
 
 const passwordSchema = z.string().min(8, "Пароль — минимум 8 символов").max(100);
+const legalConsentSchema = {
+  privacyConsent: z.literal(true, { error: "Нужно согласие на обработку персональных данных" }),
+  termsConsent: z.literal(true, { error: "Нужно принять пользовательское соглашение" }),
+};
+const LEGAL_VERSION = "2026-09-04";
 
 function publicUser(u: typeof users.$inferSelect) {
   return {
@@ -46,6 +51,7 @@ export const authRouter = createRouter({
         password: passwordSchema,
         firstName: z.string().min(1, "Укажите имя").max(120),
         lastName: z.string().max(120).default(""),
+        ...legalConsentSchema,
       }),
     )
     .mutation(async ({ input, ctx }) => {
@@ -78,6 +84,10 @@ export const authRouter = createRouter({
           isPlatformOwner: invite.isPlatformOwner,
           firstName: input.firstName.trim(),
           lastName: input.lastName.trim(),
+          privacyConsentAt: new Date(),
+          privacyConsentVersion: LEGAL_VERSION,
+          termsAcceptedAt: new Date(),
+          termsVersion: LEGAL_VERSION,
         })
         .$returningId();
       if (invite.role === "therapist") {
@@ -113,6 +123,7 @@ export const authRouter = createRouter({
         password: passwordSchema,
         firstName: z.string().min(1, "Укажите имя").max(120),
         lastName: z.string().max(120).default(""),
+        ...legalConsentSchema,
         aiConsent: z.literal(true, {
           error: "Нужно согласие на AI-обработку сессий — его можно отозвать в любой момент",
         }),
@@ -144,6 +155,10 @@ export const authRouter = createRouter({
           role: "client",
           firstName: input.firstName.trim(),
           lastName: input.lastName.trim(),
+          privacyConsentAt: new Date(),
+          privacyConsentVersion: LEGAL_VERSION,
+          termsAcceptedAt: new Date(),
+          termsVersion: LEGAL_VERSION,
         })
         .$returningId();
       const hue = Math.floor(Math.random() * 360);

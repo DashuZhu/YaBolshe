@@ -4,6 +4,7 @@ import {
   Map, Sparkles, UserCheck, ShieldCheck,
 } from 'lucide-react'
 import { Logo, Blobs, GlassCard } from '@/components/brand'
+import { LegalLinks } from '@/components/legal'
 
 const features = [
   {
@@ -187,8 +188,9 @@ export default function Landing() {
         </GlassCard>
       </section>
 
-      <footer className="border-t border-brand-softpink/40 py-8 text-center text-xs text-brand-mute">
-        «Я Больше!» · терапевт решает, что становится доступно клиенту · сделано с теплом
+      <footer className="border-t border-brand-softpink/40 px-6 py-8 text-center text-xs text-brand-mute">
+        <p>«Я Больше!» · терапевт решает, что становится доступно клиенту · сделано с теплом</p>
+        <LegalLinks className="mt-4" />
       </footer>
     </div>
   )

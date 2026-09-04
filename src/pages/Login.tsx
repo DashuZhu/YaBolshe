@@ -33,7 +33,8 @@ export default function Login() {
   const [busy, setBusy] = useState(false)
 
   const [form, setForm] = useState({
-    email: '', password: '', firstName: '', lastName: '', inviteCode: initialInvite, aiConsent: false,
+    email: '', password: '', firstName: '', lastName: '', inviteCode: initialInvite,
+    privacyConsent: false, termsConsent: false, aiConsent: false,
   })
 
   const utils = trpc.useUtils()
@@ -68,11 +69,14 @@ export default function Login() {
       regInvitedMut.mutate({
         inviteCode: form.inviteCode, email, password: form.password,
         firstName: form.firstName, lastName: form.lastName,
+        privacyConsent: form.privacyConsent as true, termsConsent: form.termsConsent as true,
       })
     if (mode === 'client')
       regCMut.mutate({
         inviteCode: form.inviteCode, email, password: form.password,
-        firstName: form.firstName, lastName: form.lastName, aiConsent: form.aiConsent as true,
+        firstName: form.firstName, lastName: form.lastName,
+        privacyConsent: form.privacyConsent as true, termsConsent: form.termsConsent as true,
+        aiConsent: form.aiConsent as true,
       })
   }
 
@@ -143,6 +147,19 @@ export default function Login() {
             <input className={inputCls} type="password" placeholder={mode === 'login' ? 'Пароль' : 'Пароль (минимум 8 символов)'} value={form.password} onChange={set('password')}
               onKeyDown={(e) => e.key === 'Enter' && submit()} />
 
+            {mode !== 'login' && (
+              <div className="space-y-2 rounded-2xl bg-white/60 p-4 text-xs leading-relaxed text-brand-ink">
+                <label className="flex cursor-pointer items-start gap-3">
+                  <input type="checkbox" checked={form.privacyConsent} onChange={set('privacyConsent')} className="mt-0.5 h-4 w-4 accent-brand-violet" />
+                  <span>Я даю отдельное согласие на обработку персональных данных на условиях <Link className="font-bold underline" to="/consent">Согласия</Link> и <Link className="font-bold underline" to="/privacy">Политики</Link>.</span>
+                </label>
+                <label className="flex cursor-pointer items-start gap-3">
+                  <input type="checkbox" checked={form.termsConsent} onChange={set('termsConsent')} className="mt-0.5 h-4 w-4 accent-brand-violet" />
+                  <span>Я принимаю <Link className="font-bold underline" to="/terms">Пользовательское соглашение</Link>.</span>
+                </label>
+              </div>
+            )}
+
             {mode === 'client' && (
               <label className="flex cursor-pointer items-start gap-3 rounded-2xl bg-brand-lav/10 p-4 text-xs leading-relaxed text-brand-ink">
                 <input type="checkbox" checked={form.aiConsent} onChange={set('aiConsent')} className="mt-0.5 h-4 w-4 accent-brand-violet" />
@@ -170,6 +187,7 @@ export default function Login() {
         </GlassCard>
 
         <p className="mt-6 text-center text-xs leading-relaxed text-brand-mute">
+          {mode === 'login' && <>Продолжая вход, вы подтверждаете, что ознакомились с <Link className="underline" to="/privacy">Политикой</Link> и <Link className="underline" to="/terms">условиями сервиса</Link>.<br /></>}
           Портал не является медицинской услугой и не заменяет терапию. В экстренной ситуации — 112.
         </p>
       </main>

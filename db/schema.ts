@@ -27,6 +27,10 @@ export const users = mysqlTable("users", {
   timezone: varchar("timezone", { length: 64 }).notNull().default("Europe/Moscow"),
   locale: varchar("locale", { length: 8 }).notNull().default("ru"),
   status: mysqlEnum("status", ["active", "blocked"]).notNull().default("active"),
+  privacyConsentAt: timestamp("privacy_consent_at"),
+  privacyConsentVersion: varchar("privacy_consent_version", { length: 32 }),
+  termsAcceptedAt: timestamp("terms_accepted_at"),
+  termsVersion: varchar("terms_version", { length: 32 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

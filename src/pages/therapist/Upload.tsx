@@ -4,6 +4,7 @@ import { UploadCloud, FileVideo, CheckCircle2, Loader2, ShieldCheck, AlertTriang
 import { AppShell } from '@/components/shell'
 import { GlassCard } from '@/components/brand'
 import { trpc } from '@/lib/store'
+import { Link } from 'react-router'
 
 const MAX_UPLOAD_BYTES = 250 * 1024 * 1024
 
@@ -61,6 +62,7 @@ export default function Upload() {
   const [recordings, setRecordings] = useState<Recording[]>([])
   const [phase, setPhase] = useState<'idle' | 'uploading' | 'done'>('idle')
   const [error, setError] = useState('')
+  const [recordingConsent, setRecordingConsent] = useState(false)
 
   const createClientMut = trpc.clients.createManual.useMutation()
   const createSessionMut = trpc.sessions.createForUpload.useMutation()
@@ -71,6 +73,10 @@ export default function Upload() {
   }
 
   const chooseFiles = (selected: FileList | null) => {
+    if (!recordingConsent) {
+      setError('Сначала подтвердите согласие участников записи на обработку.')
+      return
+    }
     setError('')
     setPhase('idle')
     const files = Array.from(selected ?? [])
@@ -148,11 +154,15 @@ export default function Upload() {
         <div className="mt-6 flex items-start gap-3 rounded-2xl border border-brand-success/40 bg-brand-success/10 px-4 py-3">
           <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" />
           <p className="text-sm text-emerald-900">
-            Одинаковые имена файлов попадут в карточку одного клиента. Загружая записи, вы подтверждаете согласие клиента на хранение и AI-обработку.
+            Одинаковые имена файлов попадут в карточку одного клиента. Исходный файл удалится после успешной обработки.
           </p>
         </div>
 
         <GlassCard deep className="mt-6">
+          <label className="mb-4 flex cursor-pointer items-start gap-3 rounded-2xl bg-brand-lav/10 p-4 text-xs leading-relaxed text-brand-ink">
+            <input type="checkbox" checked={recordingConsent} onChange={(event) => setRecordingConsent(event.target.checked)} className="mt-0.5 h-4 w-4 accent-brand-violet" />
+            <span>Подтверждаю, что все участники записи согласились на её загрузку, расшифровку и создание черновых материалов в соответствии с <Link className="font-bold underline" to="/consent">Согласием на обработку данных</Link>.</span>
+          </label>
           <input
             ref={fileInput}
             type="file"
@@ -163,9 +173,9 @@ export default function Upload() {
           />
           <button
             type="button"
-            disabled={phase === 'uploading'}
+            disabled={phase === 'uploading' || !recordingConsent}
             onClick={() => {
-              if (phase === 'uploading' || !fileInput.current) return
+              if (phase === 'uploading' || !recordingConsent || !fileInput.current) return
               fileInput.current.value = ''
               fileInput.current.click()
             }}

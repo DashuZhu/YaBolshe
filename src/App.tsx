@@ -3,6 +3,8 @@ import { lazy, Suspense, type ReactNode } from 'react'
 import { AppProvider, useApp } from '@/lib/store'
 import Landing from '@/pages/Landing'
 import Login from '@/pages/Login'
+import LegalPage from '@/pages/LegalPage'
+import { CookieNotice } from '@/components/legal'
 
 const TDashboard = lazy(() => import('@/pages/therapist/TDashboard'))
 const Clients = lazy(() => import('@/pages/therapist/Clients'))
@@ -45,6 +47,9 @@ export default function App() {
       <Suspense fallback={<PageLoading />}><Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/privacy" element={<LegalPage />} />
+        <Route path="/consent" element={<LegalPage />} />
+        <Route path="/terms" element={<LegalPage />} />
 
         {/* Therapist */}
         <Route path="/t" element={<Guard role="therapist"><TDashboard /></Guard>} />
@@ -68,6 +73,7 @@ export default function App() {
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes></Suspense>
+      <CookieNotice />
     </AppProvider>
   )
 }

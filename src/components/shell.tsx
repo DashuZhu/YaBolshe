@@ -7,6 +7,7 @@ import { Logo, Blobs, Avatar } from './brand'
 import { useApp, trpc } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import type { ReactNode } from 'react'
+import { LegalLinks } from './legal'
 
 const navByRole = {
   therapist: [
@@ -100,6 +101,7 @@ export function AppShell({ children, role }: { children: ReactNode; role: 'thera
             <LogOut className="h-4 w-4" />
             Выйти
           </button>
+          <LegalLinks className="px-2 text-[9px] leading-relaxed text-brand-mute" />
         </div>
       </aside>
 

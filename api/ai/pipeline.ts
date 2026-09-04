@@ -10,6 +10,7 @@ import {
   type TranscriptSegment,
 } from "./openai";
 import { logAudit } from "../queries/audit";
+import { unlink } from "node:fs/promises";
 
 // Rough cost estimation (USD). Tune to your tariff.
 const COST = {
@@ -33,6 +34,20 @@ async function approvedContextFor(clientId: number): Promise<string> {
     .orderBy(desc(sessions.sessionDate))
     .limit(5);
   return rows.map((r) => `• ${r.title}: ${r.summary ?? ""}`).join("\n");
+}
+
+async function deleteProcessedMedia(sessionId: number, mediaPath: string | null): Promise<void> {
+  if (!mediaPath) return;
+  try {
+    await unlink(mediaPath);
+    await getDb()
+      .update(sessions)
+      .set({ hasMedia: false, mediaPath: null, mediaSizeBytes: null })
+      .where(eq(sessions.id, sessionId));
+    await logAudit(null, "system", "media.deleted_after_processing", "session", String(sessionId));
+  } catch (error) {
+    console.warn("could not delete processed media", sessionId, error);
+  }
 }
 
 /**
@@ -86,6 +101,7 @@ export async function processSession(sessionId: number): Promise<void> {
       await logAudit(null, "system", "transcription.complete_without_analysis", "session", String(sessionId), {
         reason: "ai_not_configured",
       });
+      await deleteProcessedMedia(sessionId, session.mediaPath);
       return;
     }
 
@@ -186,6 +202,7 @@ export async function processSession(sessionId: number): Promise<void> {
     });
 
     await setStatus(sessionId, "draft_ready");
+    await deleteProcessedMedia(sessionId, session.mediaPath);
     await logAudit(null, "system", "ai.analysis_complete", "session", String(sessionId), {
       model,
       inputTokens,
