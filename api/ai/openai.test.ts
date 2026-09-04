@@ -54,7 +54,7 @@ describe("local transcription routing", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(String(fetchMock.mock.calls[1][0])).toContain("http://whisper/transcribe");
-    expect(result.model).toBe("faster-whisper:medium:int8");
+    expect(result.model).toBe("faster-whisper:small:int8");
     expect(result.segments[0].text).toBe("Резерв работает.");
   });
 });
