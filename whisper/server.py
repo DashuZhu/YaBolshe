@@ -1,4 +1,5 @@
 import asyncio
+import json
 import math
 import os
 import tempfile
@@ -6,6 +7,7 @@ from pathlib import Path
 from urllib.parse import unquote
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from faster_whisper import WhisperModel
 
 
@@ -73,7 +75,7 @@ def run_transcription(path: str, language: str) -> dict:
 
 
 @app.post("/transcribe")
-async def transcribe(request: Request, language: str = "ru") -> dict:
+async def transcribe(request: Request, language: str = "ru"):
     encoded_name = request.headers.get("x-filename", "audio.mp3")
     suffix = Path(unquote(encoded_name)).suffix.lower() or ".mp3"
     temp_path = ""
@@ -88,12 +90,32 @@ async def transcribe(request: Request, language: str = "ru") -> dict:
                 temp_file.write(chunk)
         if size == 0:
             raise HTTPException(status_code=400, detail="empty audio file")
-        async with transcription_lock:
-            return await asyncio.to_thread(run_transcription, temp_path, language)
+        async def stream_result():
+            task = None
+            try:
+                async with transcription_lock:
+                    task = asyncio.create_task(asyncio.to_thread(run_transcription, temp_path, language))
+                    while True:
+                        try:
+                            result = await asyncio.wait_for(asyncio.shield(task), timeout=15)
+                            yield json.dumps(result, ensure_ascii=False)
+                            return
+                        except asyncio.TimeoutError:
+                            yield " \n"
+            finally:
+                if task is not None and not task.done():
+                    try:
+                        await asyncio.shield(task)
+                    except (Exception, asyncio.CancelledError):
+                        pass
+                Path(temp_path).unlink(missing_ok=True)
+
+        return StreamingResponse(stream_result(), media_type="application/json")
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)[:500]) from exc
-    finally:
+    except BaseException:
         if temp_path:
             Path(temp_path).unlink(missing_ok=True)
+        raise

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import math
 import os
 import re
@@ -9,6 +10,7 @@ from urllib.parse import unquote
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import StreamingResponse
 
 
 NEMO_URL = "http://127.0.0.1:8080"
@@ -109,7 +111,7 @@ def run_transcription(source_path: str, language: str) -> dict:
 
 
 @app.post("/transcribe")
-async def transcribe(request: Request, language: str = "ru") -> dict:
+async def transcribe(request: Request, language: str = "ru"):
     encoded_name = request.headers.get("x-filename", "audio.mp3")
     suffix = Path(unquote(encoded_name)).suffix.lower() or ".mp3"
     source_path = ""
@@ -124,12 +126,33 @@ async def transcribe(request: Request, language: str = "ru") -> dict:
                 source_file.write(chunk)
         if size == 0:
             raise HTTPException(status_code=400, detail="empty audio file")
-        async with transcription_lock:
-            return await asyncio.to_thread(run_transcription, source_path, language)
+        async def stream_result():
+            task = None
+            try:
+                async with transcription_lock:
+                    task = asyncio.create_task(asyncio.to_thread(run_transcription, source_path, language))
+                    while True:
+                        try:
+                            result = await asyncio.wait_for(asyncio.shield(task), timeout=15)
+                            yield json.dumps(result, ensure_ascii=False)
+                            return
+                        except asyncio.TimeoutError:
+                            # Keep the HTTP connection alive while the CPU model works.
+                            yield " \n"
+            finally:
+                if task is not None and not task.done():
+                    try:
+                        await asyncio.shield(task)
+                    except (Exception, asyncio.CancelledError):
+                        pass
+                Path(source_path).unlink(missing_ok=True)
+
+        return StreamingResponse(stream_result(), media_type="application/json")
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)[:500]) from exc
-    finally:
+    except BaseException:
         if source_path:
             Path(source_path).unlink(missing_ok=True)
+        raise

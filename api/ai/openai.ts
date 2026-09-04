@@ -81,11 +81,11 @@ export async function transcribeAudio(
 ): Promise<{ segments: TranscriptSegment[]; durationSec: number; model: string }> {
   const localErrors: string[] = [];
   const localServices = [
-    LOCAL_PARAKEET_URL()
-      ? { url: LOCAL_PARAKEET_URL(), model: `parakeet:${LOCAL_PARAKEET_MODEL()}` }
-      : null,
     LOCAL_WHISPER_URL()
       ? { url: LOCAL_WHISPER_URL(), model: `faster-whisper:${LOCAL_WHISPER_MODEL()}:int8` }
+      : null,
+    LOCAL_PARAKEET_URL()
+      ? { url: LOCAL_PARAKEET_URL(), model: `parakeet:${LOCAL_PARAKEET_MODEL()}` }
       : null,
   ].filter((service): service is { url: string; model: string } => service !== null);
 
@@ -139,11 +139,11 @@ export async function transcribeAudioFile(
 ): Promise<{ segments: TranscriptSegment[]; durationSec: number; model: string }> {
   const localErrors: string[] = [];
   const localServices = [
-    LOCAL_PARAKEET_URL()
-      ? { url: LOCAL_PARAKEET_URL(), model: `parakeet:${LOCAL_PARAKEET_MODEL()}` }
-      : null,
     LOCAL_WHISPER_URL()
       ? { url: LOCAL_WHISPER_URL(), model: `faster-whisper:${LOCAL_WHISPER_MODEL()}:int8` }
+      : null,
+    LOCAL_PARAKEET_URL()
+      ? { url: LOCAL_PARAKEET_URL(), model: `parakeet:${LOCAL_PARAKEET_MODEL()}` }
       : null,
   ].filter((service): service is { url: string; model: string } => service !== null);
 

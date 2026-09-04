@@ -10,7 +10,7 @@ afterEach(() => {
 });
 
 describe("local transcription routing", () => {
-  it("uses Parakeet before Whisper", async () => {
+  it("uses fast Whisper before Parakeet", async () => {
     process.env.PARAKEET_URL = "http://parakeet";
     process.env.WHISPER_URL = "http://whisper";
     const fetchMock = vi.fn().mockResolvedValue(
@@ -27,12 +27,12 @@ describe("local transcription routing", () => {
     const result = await transcribeAudio(Buffer.from("audio"), "session.mp3");
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String(fetchMock.mock.calls[0][0])).toContain("http://parakeet/transcribe");
-    expect(result.model).toContain("parakeet:");
+    expect(String(fetchMock.mock.calls[0][0])).toContain("http://whisper/transcribe");
+    expect(result.model).toBe("faster-whisper:small:int8");
     expect(result.segments[0].text).toBe("Добрый день.");
   });
 
-  it("falls back to Whisper when Parakeet fails", async () => {
+  it("falls back to Parakeet when Whisper fails", async () => {
     process.env.PARAKEET_URL = "http://parakeet";
     process.env.WHISPER_URL = "http://whisper";
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -53,8 +53,8 @@ describe("local transcription routing", () => {
     const result = await transcribeAudio(Buffer.from("audio"), "session.m4a");
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(String(fetchMock.mock.calls[1][0])).toContain("http://whisper/transcribe");
-    expect(result.model).toBe("faster-whisper:small:int8");
+    expect(String(fetchMock.mock.calls[1][0])).toContain("http://parakeet/transcribe");
+    expect(result.model).toContain("parakeet:");
     expect(result.segments[0].text).toBe("Резерв работает.");
   });
 });
