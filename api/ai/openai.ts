@@ -158,7 +158,7 @@ export async function transcribeAudioFile(
         // its lock time to become visible, wait for it to finish, and retry the
         // same primary service instead of immediately loading the fallback.
         await new Promise((resolve) => setTimeout(resolve, 1500));
-        if (!(await serviceBusy(service.url))) throw firstError;
+        if (!(await serviceState(service.url)).busy) throw firstError;
         await waitUntilServiceIsFree(service.url);
         result = await transcribeWithLocalFile(service.url, filePath, fileName);
       }
@@ -180,14 +180,13 @@ export async function transcribeAudioFile(
   return transcribeAudio(await readFile(filePath), fileName);
 }
 
-async function serviceBusy(url: string): Promise<boolean> {
+async function serviceState(url: string): Promise<{ ready: boolean; busy: boolean }> {
   try {
     const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(5000) });
-    if (!response.ok) return false;
     const data = (await response.json()) as { busy?: boolean };
-    return data.busy === true;
+    return { ready: response.ok, busy: data.busy === true };
   } catch {
-    return false;
+    return { ready: false, busy: false };
   }
 }
 
@@ -198,7 +197,9 @@ async function serviceBusy(url: string): Promise<boolean> {
  */
 async function waitUntilServiceIsFree(url: string): Promise<void> {
   const deadline = Date.now() + 4 * 60 * 60 * 1000;
-  while (await serviceBusy(url)) {
+  while (true) {
+    const state = await serviceState(url);
+    if (state.ready && !state.busy) return;
     if (Date.now() >= deadline) throw new Error("сервис расшифровки слишком долго занят");
     await new Promise((resolve) => setTimeout(resolve, 5000));
   }
