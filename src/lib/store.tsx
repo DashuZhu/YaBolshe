@@ -23,7 +23,11 @@ const Ctx = createContext<AppState | null>(null)
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const utils = trpc.useUtils()
-  const meQuery = trpc.auth.me.useQuery(undefined, { staleTime: 30_000, retry: false })
+  // retry (not false): a transient DB hiccup on the server now surfaces as a
+  // real query error rather than a fake "not logged in" response — retrying
+  // a couple of times here means a brief blip resolves itself instead of
+  // ever reaching the UI as a forced logout.
+  const meQuery = trpc.auth.me.useQuery(undefined, { staleTime: 30_000, retry: 2 })
 
   const me = meQuery.data === undefined ? undefined : (meQuery.data as Me | null)
 
@@ -46,11 +50,11 @@ export function useApp() {
 // ---- data hooks (thin wrappers over tRPC) ----
 
 export function useSessions() {
-  return trpc.sessions.list.useQuery(undefined, { refetchInterval: 3000 })
+  return trpc.sessions.list.useQuery(undefined, { refetchInterval: 8000 })
 }
 
 export function useSession(id: number) {
-  return trpc.sessions.get.useQuery({ id }, { enabled: id > 0, refetchInterval: 3000 })
+  return trpc.sessions.get.useQuery({ id }, { enabled: id > 0, refetchInterval: 8000 })
 }
 
 export function useClients() {
@@ -59,6 +63,10 @@ export function useClients() {
 
 export function useTherapistStats() {
   return trpc.clients.stats.useQuery(undefined, { refetchInterval: 30_000 })
+}
+
+export function useClientAnalysis(clientId: number) {
+  return trpc.clients.getAnalysis.useQuery({ clientId }, { enabled: clientId > 0 })
 }
 
 export function useMyProfile() {

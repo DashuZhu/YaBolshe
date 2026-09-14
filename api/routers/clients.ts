@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and, desc, inArray, sql } from "drizzle-orm";
+import { eq, and, desc, inArray, isNotNull, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { randomBytes } from "node:crypto";
 import { createRouter, therapistQuery, authedQuery } from "../middleware";
@@ -13,6 +13,7 @@ import {
   homework,
   invites,
   therapistProfiles,
+  clientAnalysis,
 } from "@db/schema";
 import { logAudit } from "../queries/audit";
 import { ruDate, ruDateTime } from "../queries/serialize";
@@ -43,13 +44,29 @@ export const clientsRouter = createRouter({
       .from(sessions)
       .where(and(eq(sessions.therapistId, ctx.user.id), sql`session_date >= ${monthStart}`));
 
+    const monthSent = await db
+      .select({ n: sql<number>`count(*)` })
+      .from(sessions)
+      .where(
+        and(
+          eq(sessions.therapistId, ctx.user.id),
+          eq(sessions.status, "sent_to_client"),
+          sql`sent_at >= ${monthStart}`,
+        ),
+      );
+
+    const monthSessionsLimit = profile?.monthlySessionLimit ?? 80;
+    const monthSessionsCount = Number(monthSessions[0]?.n ?? 0);
+
     return {
       name: `${ctx.user.firstName} ${ctx.user.lastName}`.trim(),
       firstName: ctx.user.firstName,
       activeClients: Number(activeClients[0]?.n ?? 0),
       maxClients: profile?.maxActiveClients ?? 20,
-      monthSessions: Number(monthSessions[0]?.n ?? 0),
-      monthSessionsLimit: profile?.monthlySessionLimit ?? 80,
+      monthSessions: monthSessionsCount,
+      monthSessionsLimit,
+      monthSessionsRemaining: Math.max(0, monthSessionsLimit - monthSessionsCount),
+      monthSent: Number(monthSent[0]?.n ?? 0),
       monthHours: Math.round((Number(monthSessions[0]?.minutes ?? 0) / 60) * 10) / 10,
       monthHoursLimit: profile?.monthlyHoursLimit ?? 120,
     };
@@ -112,13 +129,7 @@ export const clientsRouter = createRouter({
           Array.isArray(s.riskFlagsJson) &&
           (s.riskFlagsJson as unknown[]).length > 0,
       );
-      const lastAnalyzed = clientSessions.find((s) => s.dynamicsJson);
-      const dynamicsData = lastAnalyzed?.dynamicsJson as { improved?: string[] } | null;
-      const dynamics = lastWithRisk
-        ? ("attention" as const)
-        : dynamicsData?.improved && dynamicsData.improved.length > 0
-          ? ("up" as const)
-          : ("stable" as const);
+      const dynamics = lastWithRisk ? ("attention" as const) : ("stable" as const);
 
       result.push({
         id: String(profile.id),
@@ -136,6 +147,7 @@ export const clientsRouter = createRouter({
         pendingApprovals: pendingByClient.get(profile.id) ?? 0,
         homeworkActive: homeworkByClient.get(profile.id) ?? 0,
         avatarHue: profile.avatarHue,
+        contactEmail: profile.contactEmail ?? "",
       });
     }
     return result;
@@ -146,6 +158,7 @@ export const clientsRouter = createRouter({
       z.object({
         name: z.string().trim().min(1, "Укажите имя клиента").max(240),
         focus: z.string().trim().max(255).default(""),
+        contactEmail: z.union([z.literal(""), z.string().trim().email("Некорректный email")]).default(""),
         aiConsent: z.literal(true, {
           error: "Подтвердите, что клиент согласился на обработку записи",
         }),
@@ -195,6 +208,7 @@ export const clientsRouter = createRouter({
           userId,
           therapistId: ctx.user.id,
           focus: input.focus,
+          contactEmail: input.contactEmail || null,
           avatarHue: Math.floor(Math.random() * 360),
           aiConsent: true,
         })
@@ -257,6 +271,56 @@ export const clientsRouter = createRouter({
       await db
         .update(clientProfiles)
         .set({ focus: input.focus })
+        .where(
+          and(eq(clientProfiles.id, input.clientId), eq(clientProfiles.therapistId, ctx.user.id)),
+        );
+      return { ok: true };
+    }),
+
+  // standing psychological portrait + dynamics, recomputed every 4 analyzed
+  // sessions — powers the client page's "Динамика"/"Портрет" tabs
+  getAnalysis: therapistQuery
+    .input(z.object({ clientId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const db = getDb();
+      const profile = await db.query.clientProfiles.findFirst({
+        where: and(eq(clientProfiles.id, input.clientId), eq(clientProfiles.therapistId, ctx.user.id)),
+      });
+      if (!profile) throw new TRPCError({ code: "NOT_FOUND", message: "Клиент не найден" });
+
+      const [analyzedCount] = await db
+        .select({ n: sql<number>`count(*)` })
+        .from(sessions)
+        .where(and(eq(sessions.clientId, input.clientId), isNotNull(sessions.summaryShort)));
+      const totalAnalyzed = Number(analyzedCount?.n ?? 0);
+      const EVERY_N = 4;
+      const sessionsUntilNextUpdate = EVERY_N - (totalAnalyzed % EVERY_N);
+
+      const row = await db.query.clientAnalysis.findFirst({
+        where: eq(clientAnalysis.clientId, input.clientId),
+      });
+
+      return {
+        hasData: !!row,
+        portraitSummary: row?.portraitSummary ?? "",
+        dynamicsSummary: row?.dynamicsSummary ?? "",
+        recurringThemes: (row?.recurringThemesJson as string[] | null) ?? [],
+        avoidedByClient: (row?.avoidedByClientJson as string[] | null) ?? [],
+        avoidedByTherapist: (row?.avoidedByTherapistJson as string[] | null) ?? [],
+        sessionsAnalyzed: row?.sessionsAnalyzed ?? 0,
+        updatedAt: row?.updatedAt ? ruDateTime(row.updatedAt) : undefined,
+        totalAnalyzedSessions: totalAnalyzed,
+        sessionsUntilNextUpdate,
+      };
+    }),
+
+  updateContactEmail: therapistQuery
+    .input(z.object({ clientId: z.number(), contactEmail: z.union([z.literal(""), z.string().trim().email("Некорректный email")]) }))
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      await db
+        .update(clientProfiles)
+        .set({ contactEmail: input.contactEmail || null })
         .where(
           and(eq(clientProfiles.id, input.clientId), eq(clientProfiles.therapistId, ctx.user.id)),
         );

@@ -550,7 +550,7 @@ export const sessionStatusMeta: Record<SessionStatus, { label: string; tone: 'pi
   transcribing: { label: 'Расшифровка', tone: 'violet' },
   diarizing: { label: 'Разделение голосов', tone: 'violet' },
   analyzing: { label: 'AI-анализ', tone: 'violet' },
-  draft_ready: { label: 'Черновик готов', tone: 'warning' },
+  draft_ready: { label: 'Готово к проверке', tone: 'warning' },
   therapist_review: { label: 'На проверке', tone: 'pink' },
   approved: { label: 'Подтверждено', tone: 'success' },
   sent_to_client: { label: 'Отправлено клиенту', tone: 'success' },

@@ -11,14 +11,6 @@ const Clients = lazy(() => import('@/pages/therapist/Clients'))
 const ClientDetail = lazy(() => import('@/pages/therapist/ClientDetail'))
 const Upload = lazy(() => import('@/pages/therapist/Upload'))
 const SessionDetail = lazy(() => import('@/pages/therapist/SessionDetail'))
-const RoadmapPage = lazy(() => import('@/pages/therapist/RoadmapPage'))
-const CDashboard = lazy(() => import('@/pages/client/CDashboard'))
-const CInsights = lazy(() => import('@/pages/client/CInsights'))
-const CHomework = lazy(() => import('@/pages/client/CHomework'))
-const CAgreements = lazy(() => import('@/pages/client/CAgreements'))
-const CProgress = lazy(() => import('@/pages/client/CProgress'))
-const CCheckIn = lazy(() => import('@/pages/client/CCheckIn'))
-const CSafety = lazy(() => import('@/pages/client/CSafety'))
 const Admin = lazy(() => import('@/pages/admin/Admin'))
 
 function PageLoading() {
@@ -29,7 +21,7 @@ function PageLoading() {
   )
 }
 
-function Guard({ role, children }: { role: 'therapist' | 'client' | 'admin'; children: ReactNode }) {
+function Guard({ role, children }: { role: 'therapist' | 'admin'; children: ReactNode }) {
   const { me } = useApp()
   const location = useLocation()
   if (me === undefined) {
@@ -57,17 +49,6 @@ export default function App() {
         <Route path="/t/clients/:id" element={<Guard role="therapist"><ClientDetail /></Guard>} />
         <Route path="/t/upload" element={<Guard role="therapist"><Upload /></Guard>} />
         <Route path="/t/sessions/:id" element={<Guard role="therapist"><SessionDetail /></Guard>} />
-        <Route path="/t/roadmap" element={<Guard role="therapist"><RoadmapPage /></Guard>} />
-
-        {/* Client */}
-        <Route path="/c" element={<Guard role="client"><CDashboard /></Guard>} />
-        <Route path="/c/insights" element={<Guard role="client"><CInsights /></Guard>} />
-        <Route path="/c/homework" element={<Guard role="client"><CHomework /></Guard>} />
-        <Route path="/c/agreements" element={<Guard role="client"><CAgreements /></Guard>} />
-        <Route path="/c/progress" element={<Guard role="client"><CProgress /></Guard>} />
-        <Route path="/c/checkin" element={<Guard role="client"><CCheckIn /></Guard>} />
-        <Route path="/c/safety" element={<Guard role="client"><CSafety /></Guard>} />
-
         {/* Admin */}
         <Route path="/a" element={<Guard role="admin"><Admin /></Guard>} />
 
