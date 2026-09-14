@@ -1,12 +1,15 @@
 import { useState } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router'
-import { Heart, ArrowLeft, Loader2, KeyRound, Mail, UserRound, Ticket } from 'lucide-react'
+import { Heart, ArrowLeft, Loader2, KeyRound, Mail, UserRound } from 'lucide-react'
 import { Logo, Blobs, GlassCard } from '@/components/brand'
 import { trpc } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import { friendlyApiError } from '@/lib/errors'
 
-type Mode = 'login' | 'invited' | 'client'
+// Clients never have accounts on this platform — they receive their session
+// materials by email. Only therapists/admins sign in here, either directly
+// or via an invite code from the platform owner.
+type Mode = 'login' | 'invited'
 type AuthenticatedUser = {
   id: number
   email: string
@@ -23,18 +26,14 @@ export default function Login() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const initialInvite = searchParams.get('invite')?.trim().toUpperCase() ?? ''
-  const initialMode: Mode = searchParams.get('mode') === 'client'
-    ? 'client'
-    : initialInvite
-      ? 'invited'
-      : 'login'
+  const initialMode: Mode = initialInvite ? 'invited' : 'login'
   const [mode, setMode] = useState<Mode>(initialMode)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
   const [form, setForm] = useState({
     email: '', password: '', firstName: '', lastName: '', inviteCode: initialInvite,
-    privacyConsent: false, termsConsent: false, aiConsent: false,
+    privacyConsent: false, termsConsent: false,
   })
 
   const utils = trpc.useUtils()
@@ -42,7 +41,7 @@ export default function Login() {
     // The login response already contains the authenticated user. Put it into
     // the cache before navigation so Guard never sees the stale logged-out value.
     utils.auth.me.setData(undefined, user)
-    navigate(user.role === 'therapist' ? '/t' : user.role === 'client' ? '/c' : '/a', { replace: true })
+    navigate(user.role === 'therapist' ? '/t' : '/a', { replace: true })
     void utils.invalidate()
   }
 
@@ -51,10 +50,6 @@ export default function Login() {
     onError: (e) => { setError(friendlyApiError(e.message)); setBusy(false) },
   })
   const regInvitedMut = trpc.auth.registerInvited.useMutation({
-    onSuccess: go,
-    onError: (e) => { setError(friendlyApiError(e.message)); setBusy(false) },
-  })
-  const regCMut = trpc.auth.registerClient.useMutation({
     onSuccess: go,
     onError: (e) => { setError(friendlyApiError(e.message)); setBusy(false) },
   })
@@ -70,13 +65,6 @@ export default function Login() {
         inviteCode: form.inviteCode, email, password: form.password,
         firstName: form.firstName, lastName: form.lastName,
         privacyConsent: form.privacyConsent as true, termsConsent: form.termsConsent as true,
-      })
-    if (mode === 'client')
-      regCMut.mutate({
-        inviteCode: form.inviteCode, email, password: form.password,
-        firstName: form.firstName, lastName: form.lastName,
-        privacyConsent: form.privacyConsent as true, termsConsent: form.termsConsent as true,
-        aiConsent: form.aiConsent as true,
       })
   }
 
@@ -99,14 +87,12 @@ export default function Login() {
             <Heart className="h-7 w-7 fill-white/90" />
           </span>
           <h1 className="text-2xl font-extrabold text-brand-deep">
-            {mode === 'login' ? 'С возвращением' : mode === 'invited' ? 'Регистрация по приглашению' : 'Кабинет клиента'}
+            {mode === 'login' ? 'С возвращением' : 'Регистрация по приглашению'}
           </h1>
           <p className="mt-2 text-sm text-brand-mute">
             {mode === 'login'
               ? 'Введите почту и пароль от вашего кабинета'
-              : mode === 'invited'
-                ? 'Код приглашения определит вашу роль и доступ'
-                : 'Регистрация клиента доступна только по приглашению его терапевта'}
+              : 'Код приглашения определит вашу роль и доступ'}
           </p>
         </div>
 
@@ -114,7 +100,6 @@ export default function Login() {
           {([
             ['login', 'Вход', KeyRound],
             ['invited', 'По приглашению', UserRound],
-            ['client', 'Я клиент', Ticket],
           ] as const).map(([m, label, Icon]) => (
             <button
               key={m}
@@ -158,17 +143,6 @@ export default function Login() {
                   <span>Я принимаю <Link className="font-bold underline" to="/terms">Пользовательское соглашение</Link>.</span>
                 </label>
               </div>
-            )}
-
-            {mode === 'client' && (
-              <label className="flex cursor-pointer items-start gap-3 rounded-2xl bg-brand-lav/10 p-4 text-xs leading-relaxed text-brand-ink">
-                <input type="checkbox" checked={form.aiConsent} onChange={set('aiConsent')} className="mt-0.5 h-4 w-4 accent-brand-violet" />
-                <span>
-                  Я даю согласие на обработку персональных данных и на AI-обработку записей моих сессий
-                  (расшифровка и черновой анализ). Понимаю, что клиентские материалы публикуются только после
-                  подтверждения терапевтом. Согласие можно отозвать в любой момент.
-                </span>
-              </label>
             )}
 
             {error && (

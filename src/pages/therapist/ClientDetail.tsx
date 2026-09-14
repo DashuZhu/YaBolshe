@@ -1,22 +1,19 @@
 import { Link, useParams, useSearchParams } from 'react-router'
 import { useState } from 'react'
 import {
-  ArrowLeft, UploadCloud, Map, Plus, Tag, Check, X, Sparkles, StickyNote, Archive,
+  ArrowLeft, UploadCloud, X, Archive, Mail, Pencil, Plus, Tag, StickyNote,
 } from 'lucide-react'
 import { AppShell } from '@/components/shell'
 import { GlassCard, Avatar, SectionHeader } from '@/components/brand'
-import { Pill, ConfidenceDots, EmptyState } from '@/components/widgets'
-import { trpc, useClients, useSessions, useHomeworkList, useAgreementsList, useNotes } from '@/lib/store'
-import {
-  sessionStatusMeta, homeworkStatusLabel, agreementTypeLabel, clientActionLabel,
-} from '@/lib/data'
+import { Pill, EmptyState } from '@/components/widgets'
+import { trpc, useClients, useSessions, useClientAnalysis, useNotes } from '@/lib/store'
+import { sessionStatusMeta } from '@/lib/data'
 import { cn } from '@/lib/utils'
 
 const tabs = [
   { key: 'sessions', label: 'Сессии' },
-  { key: 'materials', label: 'Материалы' },
-  { key: 'homework', label: 'Задания' },
-  { key: 'agreements', label: 'Договорённости' },
+  { key: 'dynamics', label: 'Динамика' },
+  { key: 'portrait', label: 'Портрет' },
   { key: 'notes', label: 'Заметки' },
 ] as const
 
@@ -32,41 +29,26 @@ export default function ClientDetail() {
   const utils = trpc.useUtils()
   const clientsQ = useClients()
   const sessionsQ = useSessions()
-  const homeworkQ = useHomeworkList(clientId)
-  const agreementsQ = useAgreementsList(clientId)
+  const analysisQ = useClientAnalysis(clientId)
   const notesQ = useNotes(clientId)
 
   const client = (clientsQ.data ?? []).find((c) => c.id === id)
   const clientSessions = (sessionsQ.data ?? []).filter((s) => s.clientId === id)
-  const clientHomework = homeworkQ.data ?? []
-  const clientAgreements = agreementsQ.data ?? []
+  const analysis = analysisQ.data
   const notes = notesQ.data ?? []
-  const allInsights = clientSessions.flatMap((s) => s.insights.map((i) => ({ ...i, session: s })))
-  const allThemes = clientSessions.flatMap((s) => s.themes.map((t) => ({ ...t, session: s })))
 
+  const [editingEmail, setEditingEmail] = useState(false)
+  const [emailDraft, setEmailDraft] = useState('')
   const [newNote, setNewNote] = useState('')
-  const [hwForm, setHwForm] = useState<{ open: boolean; title: string; description: string; purpose: string; frequency: string; dueDate: string }>(
-    { open: false, title: '', description: '', purpose: '', frequency: '', dueDate: '' },
-  )
 
-  const invalidate = () => {
-    void utils.homework.list.invalidate()
-    void utils.clients.list.invalidate()
-    void utils.notes.list.invalidate()
-  }
-
-  const noteMut = trpc.notes.create.useMutation({
-    onSuccess: () => { setNewNote(''); void utils.notes.list.invalidate() },
-  })
-  const hwCreateMut = trpc.homework.create.useMutation({
-    onSuccess: () => {
-      setHwForm({ open: false, title: '', description: '', purpose: '', frequency: '', dueDate: '' })
-      invalidate()
-    },
-  })
-  const hwToggleMut = trpc.homework.toggleApproval.useMutation({ onSuccess: invalidate })
   const archiveMut = trpc.clients.archive.useMutation({
     onSuccess: () => void utils.clients.list.invalidate(),
+  })
+  const emailMut = trpc.clients.updateContactEmail.useMutation({
+    onSuccess: () => { setEditingEmail(false); void utils.clients.list.invalidate() },
+  })
+  const noteMut = trpc.notes.create.useMutation({
+    onSuccess: () => { setNewNote(''); void utils.notes.list.invalidate() },
   })
 
   if (clientsQ.data && !client) {
@@ -76,6 +58,14 @@ export default function ClientDetail() {
       </AppShell>
     )
   }
+
+  const progressHint = analysis
+    ? analysis.totalAnalyzedSessions === 0
+      ? 'Появится после того как будет проанализировано 4 сессии.'
+      : analysis.hasData
+        ? `Учтено сессий: ${analysis.sessionsAnalyzed}${analysis.updatedAt ? ` · обновлено ${analysis.updatedAt}` : ''} · до следующего обновления: ${analysis.sessionsUntilNextUpdate} сесс.`
+        : `Проанализировано сессий: ${analysis.totalAnalyzedSessions} из 4 нужных для первого обновления.`
+    : ''
 
   return (
     <AppShell role="therapist">
@@ -93,13 +83,46 @@ export default function ClientDetail() {
               в терапии с {client?.since} · сессий: {client?.sessionsCount ?? 0}
             </p>
             <p className="mt-1 text-sm font-semibold text-brand-ink">Фокус: {client?.focus || '—'}</p>
+            <div className="mt-2 flex items-center gap-2">
+              <Mail className="h-3.5 w-3.5 shrink-0 text-brand-mute" />
+              {editingEmail ? (
+                <>
+                  <input
+                    type="email"
+                    autoFocus
+                    value={emailDraft}
+                    onChange={(e) => setEmailDraft(e.target.value)}
+                    placeholder="email@example.com"
+                    className="rounded-xl border border-brand-softpink/60 bg-white/80 px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand-lav"
+                  />
+                  <button
+                    onClick={() => emailMut.mutate({ clientId, contactEmail: emailDraft.trim() })}
+                    disabled={emailMut.isPending}
+                    className="btn-3d rounded-lg px-2.5 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+                  >
+                    Сохранить
+                  </button>
+                  <button onClick={() => setEditingEmail(false)} className="btn-soft rounded-lg p-1.5">
+                    <X className="h-3.5 w-3.5 text-brand-deep" />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="text-xs text-brand-mute">{client?.contactEmail || 'почта не указана'}</span>
+                  <button
+                    onClick={() => { setEmailDraft(client?.contactEmail ?? ''); setEditingEmail(true) }}
+                    className="btn-soft flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-bold text-brand-deep"
+                  >
+                    <Pencil className="h-3 w-3" /> {client?.contactEmail ? 'изменить' : 'добавить'}
+                  </button>
+                </>
+              )}
+            </div>
+            {emailMut.error && <p className="mt-1 text-xs font-semibold text-red-700">{emailMut.error.message}</p>}
           </div>
           <div className="flex flex-wrap gap-2">
             <Link to={`/t/upload?client=${id}`} className="btn-3d flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-bold text-white">
               <UploadCloud className="h-4 w-4" /> Загрузить сессию
-            </Link>
-            <Link to={`/t/roadmap?client=${id}`} className="btn-soft flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-bold text-brand-deep">
-              <Map className="h-4 w-4" /> Roadmap
             </Link>
             <button
               onClick={() => archiveMut.mutate({ clientId })}
@@ -159,146 +182,63 @@ export default function ClientDetail() {
         </div>
       )}
 
-      {/* Materials */}
-      {tab === 'materials' && (
-        <div className="grid gap-5 lg:grid-cols-2">
-          <GlassCard>
-            <SectionHeader title="Инсайты" subtitle="из AI-анализов сессий" />
-            {allInsights.length === 0 && <EmptyState title="Инсайтов пока нет" hint="Они появятся после обработки первой сессии." />}
-            <ul className="space-y-3">
-              {allInsights.map((i) => (
-                <li key={i.id} className="rounded-2xl bg-white/70 p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm font-bold text-brand-ink">{i.title}</p>
-                    <ConfidenceDots level={i.confidence} />
+      {/* Динамика клиента — накопительная, обновляется каждые 4 сессии */}
+      {tab === 'dynamics' && (
+        <div className="space-y-5">
+          <p className="text-xs text-brand-mute">Обновляется каждые 4 проанализированные сессии по итогам всех предыдущих встреч.{progressHint && <> {progressHint}</>}</p>
+          {!analysis || !analysis.hasData ? (
+            <EmptyState title="Динамика ещё не готова" hint="Появится после того как будет проанализировано 4 сессии." />
+          ) : (
+            <>
+              <GlassCard>
+                <SectionHeader title="Куда движется терапия" subtitle="накопительная динамика по всем сессиям — только для вас" />
+                <p className="whitespace-pre-line text-sm leading-relaxed text-brand-ink">{analysis.dynamicsSummary || '—'}</p>
+              </GlassCard>
+              <div className="grid gap-4 sm:grid-cols-3">
+                {[
+                  { title: 'Повторяющиеся темы', items: analysis.recurringThemes, tone: 'bg-brand-violet/10 text-brand-deep' },
+                  { title: 'Избегает клиент', items: analysis.avoidedByClient, tone: 'bg-brand-warning/15 text-amber-900' },
+                  { title: 'Не подсвечено терапевтом', items: analysis.avoidedByTherapist, tone: 'bg-brand-danger/10 text-red-900' },
+                ].map((col) => (
+                  <div key={col.title} className={cn('rounded-2xl p-4', col.tone)}>
+                    <p className="mb-2 text-sm font-bold">{col.title}</p>
+                    {col.items.length === 0 ? (
+                      <p className="text-xs opacity-70">—</p>
+                    ) : (
+                      <ul className="space-y-1.5 text-xs">
+                        {col.items.map((it) => <li key={it}>· {it}</li>)}
+                      </ul>
+                    )}
                   </div>
-                  <p className="mt-1 text-xs text-brand-mute">{i.description}</p>
-                  <div className="mt-2 flex items-center justify-between">
-                    <span className="text-xs text-brand-violet">{clientActionLabel[i.clientAction]} · {i.session.date}</span>
-                    <Pill tone={i.approved ? 'success' : 'warning'}>{i.approved ? 'подтверждён' : 'черновик'}</Pill>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </GlassCard>
-          <GlassCard>
-            <SectionHeader title="Темы и паттерны" subtitle="что звучит между сессиями" />
-            <ul className="space-y-3">
-              {allThemes.map((t) => (
-                <li key={t.id} className="rounded-2xl bg-white/70 p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm font-bold text-brand-ink">{t.title}</p>
-                    <ConfidenceDots level={t.confidence} />
-                  </div>
-                  <p className="mt-1 text-xs text-brand-mute">{t.description}</p>
-                </li>
-              ))}
-              {clientSessions.flatMap((s) => s.patterns).map((p) => (
-                <li key={p.id} className="rounded-2xl bg-brand-lav/15 p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm font-bold text-brand-deep">Паттерн: {p.title}</p>
-                    <ConfidenceDots level={p.confidence} />
-                  </div>
-                  <p className="mt-1 text-xs text-brand-mute">{p.description}</p>
-                </li>
-              ))}
-            </ul>
-          </GlassCard>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
 
-      {/* Homework */}
-      {tab === 'homework' && (
-        <div>
-          <div className="mb-4 flex justify-end">
-            <button
-              onClick={() => setHwForm((f) => ({ ...f, open: !f.open }))}
-              className="btn-3d flex items-center gap-2 rounded-2xl px-5 py-2.5 text-xs font-bold text-white"
-            >
-              <Plus className="h-4 w-4" /> Создать задание
-            </button>
-          </div>
-          {hwForm.open && (
-            <GlassCard deep className="mb-5">
-              <div className="grid gap-3">
-                <input className={inputCls} placeholder="Название задания" value={hwForm.title} onChange={(e) => setHwForm((f) => ({ ...f, title: e.target.value }))} />
-                <textarea className={inputCls} rows={2} placeholder="Описание: что попробовать" value={hwForm.description} onChange={(e) => setHwForm((f) => ({ ...f, description: e.target.value }))} />
-                <input className={inputCls} placeholder="Зачем (мягко, по-человечески)" value={hwForm.purpose} onChange={(e) => setHwForm((f) => ({ ...f, purpose: e.target.value }))} />
-                <div className="flex gap-3">
-                  <input className={inputCls} placeholder="Частота" value={hwForm.frequency} onChange={(e) => setHwForm((f) => ({ ...f, frequency: e.target.value }))} />
-                  <input className={inputCls} placeholder="Срок" value={hwForm.dueDate} onChange={(e) => setHwForm((f) => ({ ...f, dueDate: e.target.value }))} />
-                </div>
-                <div className="flex justify-end">
-                  <button
-                    onClick={() => hwCreateMut.mutate({ clientId, title: hwForm.title, description: hwForm.description, purpose: hwForm.purpose, frequency: hwForm.frequency, dueDate: hwForm.dueDate })}
-                    disabled={!hwForm.title || !hwForm.description || hwCreateMut.isPending}
-                    className="btn-3d rounded-xl px-6 py-2.5 text-xs font-bold text-white disabled:opacity-50"
-                  >
-                    Сохранить и показать клиенту
-                  </button>
-                </div>
-              </div>
+      {/* Портрет клиента — подробный психологический портрет, обновляется каждые 4 сессии */}
+      {tab === 'portrait' && (
+        <div className="space-y-5">
+          <p className="text-xs text-brand-mute">Обновляется каждые 4 проанализированные сессии по итогам всех предыдущих встреч.{progressHint && <> {progressHint}</>}</p>
+          {!analysis || !analysis.hasData ? (
+            <EmptyState title="Портрет ещё не готов" hint="Появится после того как будет проанализировано 4 сессии." />
+          ) : (
+            <GlassCard className="border-2 border-brand-violet/30">
+              <SectionHeader title="Психологический портрет" subtitle="подробный анализ личности клиента — только для вас" />
+              <p className="whitespace-pre-line text-sm leading-relaxed text-brand-ink">{analysis.portraitSummary || '—'}</p>
             </GlassCard>
           )}
-          <div className="grid gap-4 lg:grid-cols-2">
-            {clientHomework.map((h) => (
-              <GlassCard key={h.id}>
-                <div className="flex items-start justify-between gap-3">
-                  <p className="font-bold text-brand-ink">{h.title}</p>
-                  <Pill tone={h.status === 'done' ? 'success' : h.status === 'in_progress' ? 'violet' : 'muted'}>
-                    {homeworkStatusLabel[h.status]}
-                  </Pill>
-                </div>
-                <p className="mt-2 text-sm text-brand-mute">{h.description}</p>
-                <p className="mt-2 rounded-xl bg-brand-lav/15 px-3 py-2 text-xs text-brand-deep">
-                  <b>Зачем:</b> {h.purpose}
-                </p>
-                <p className="mt-2 text-xs text-brand-mute">{h.frequency} · срок: {h.dueDate}</p>
-                {h.reflection && (
-                  <p className="mt-2 rounded-xl bg-brand-success/15 px-3 py-2 text-xs italic text-emerald-900">
-                    Рефлексия клиента: «{h.reflection}»
-                  </p>
-                )}
-                <div className="mt-4 flex items-center justify-between">
-                  <Pill tone={h.approved ? 'success' : 'warning'}>{h.approved ? 'видно клиенту' : 'черновик'}</Pill>
-                  <button
-                    onClick={() => hwToggleMut.mutate({ id: Number(h.id) })}
-                    className="btn-soft flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold text-brand-deep"
-                  >
-                    {h.approved ? <X className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
-                    {h.approved ? 'Скрыть' : 'Подтвердить'}
-                  </button>
-                </div>
-              </GlassCard>
-            ))}
-          </div>
         </div>
       )}
 
-      {/* Agreements */}
-      {tab === 'agreements' && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {clientAgreements.length === 0 && <EmptyState title="Договорённостей пока нет" hint="Они появятся из AI-анализа сессий после вашего подтверждения." />}
-          {clientAgreements.map((a) => (
-            <GlassCard key={a.id}>
-              <div className="flex items-start justify-between gap-3">
-                <Sparkles className="h-5 w-5 shrink-0 text-brand-pink" />
-                <Pill tone="violet">{agreementTypeLabel[a.type]}</Pill>
-              </div>
-              <p className="mt-3 text-base font-semibold leading-relaxed text-brand-ink">«{a.text}»</p>
-              <p className="mt-2 text-xs text-brand-mute">пересмотр: {a.reviewDate || '—'}</p>
-            </GlassCard>
-          ))}
-        </div>
-      )}
-
-      {/* Notes */}
+      {/* Заметки — свободные пометки терапевта о клиенте, клиент их никогда не видит */}
       {tab === 'notes' && (
         <div className="mx-auto max-w-3xl">
           <GlassCard deep className="mb-5 border-2 border-brand-violet/20">
             <p className="mb-3 flex items-center gap-2 text-sm font-bold text-brand-deep">
               <StickyNote className="h-4 w-4" />
-              Внутренние заметки — клиент их никогда не видит
+              Заметки от руки — клиент их никогда не видит
             </p>
             <textarea
               value={newNote}
@@ -317,10 +257,11 @@ export default function ClientDetail() {
               </button>
             </div>
           </GlassCard>
+          {notes.length === 0 && <EmptyState title="Заметок пока нет" hint="Первая заметка появится здесь после сохранения." />}
           <ul className="space-y-3">
             {notes.map((n) => (
               <li key={n.id} className="glass rounded-3xl p-5">
-                <p className="text-sm leading-relaxed text-brand-ink">{n.text}</p>
+                <p className="whitespace-pre-line text-sm leading-relaxed text-brand-ink">{n.text}</p>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   {n.tags.map((t) => (
                     <span key={t} className="flex items-center gap-1 rounded-full bg-brand-lav/25 px-2.5 py-1 text-xs font-semibold text-brand-deep">
@@ -328,9 +269,6 @@ export default function ClientDetail() {
                     </span>
                   ))}
                   <span className="ml-auto text-xs text-brand-mute">{n.createdAt}</span>
-                  <Pill tone={n.useAsAiContext ? 'violet' : 'muted'}>
-                    {n.useAsAiContext ? 'используется как контекст для AI' : 'не отправляется в AI'}
-                  </Pill>
                 </div>
               </li>
             ))}

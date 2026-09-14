@@ -53,8 +53,8 @@ export function serializeSession(
     processingError: s.processingError ?? undefined,
     summaryShort: s.summaryShort ?? "",
     clientFriendlySummary: s.clientFriendlySummary ?? "",
-    emotions: (s.emotionsJson as { label: string; intensity: "low" | "medium" | "high"; context: string }[] | null) ?? [],
-    needs: (s.needsJson as { label: string; description: string }[] | null) ?? [],
+    clientDynamicsNote: s.clientProgressNote ?? "",
+    emotionsNeedsAnalysis: s.emotionsNeedsAnalysis ?? "",
     patterns:
       (s.patternsJson as
         | { id: string; title: string; description: string; confidence: "low" | "medium" | "high"; evidence: string[] }[]
@@ -68,10 +68,7 @@ export function serializeSession(
           evidence: r.evidence ?? [],
           recommendedAction: r.recommendedAction ?? r.recommended_action ?? "",
         })) ?? [],
-    dynamics:
-      (s.dynamicsJson as
-        | { summary: string; improved: string[]; stable: string[]; newTopics: string[] }
-        | null) ?? { summary: "", improved: [], stable: [], newTopics: [] },
+    caseAnalysis: s.caseAnalysis ?? "",
     therapistQuestions: (s.therapistQuestionsJson as string[] | null) ?? [],
     uncertainties: (s.uncertaintiesJson as string[] | null) ?? [],
     transcript: ((s.transcriptJson as TranscriptSegmentDTO[] | null) ?? []).map((seg) => ({
@@ -115,6 +112,7 @@ export function serializeHomework(h: HomeworkRow) {
   return {
     id: String(h.id),
     clientId: String(h.clientId),
+    sessionId: h.sessionId ? String(h.sessionId) : undefined,
     title: h.title,
     description: h.description,
     purpose: h.purpose ?? "",

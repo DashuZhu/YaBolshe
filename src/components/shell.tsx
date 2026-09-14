@@ -1,7 +1,6 @@
 import { NavLink, useNavigate } from 'react-router'
 import {
-  LayoutDashboard, Users, UploadCloud, Map, Heart, Lightbulb, ClipboardCheck,
-  Handshake, TrendingUp, ClipboardList, ShieldCheck, Shield, LogOut, Bell,
+  LayoutDashboard, Users, UploadCloud, Heart, Shield, LogOut, Bell,
 } from 'lucide-react'
 import { Logo, Blobs, Avatar } from './brand'
 import { useApp, trpc } from '@/lib/store'
@@ -9,30 +8,22 @@ import { cn } from '@/lib/utils'
 import type { ReactNode } from 'react'
 import { LegalLinks } from './legal'
 
+// Therapist-only platform: clients never sign in here, they receive session
+// materials by email — so there is no client nav/role to show.
 const navByRole = {
   therapist: [
     { to: '/t', icon: LayoutDashboard, label: 'Дашборд', end: true },
     { to: '/t/clients', icon: Users, label: 'Клиенты' },
     { to: '/t/upload', icon: UploadCloud, label: 'Загрузить сессию' },
-    { to: '/t/roadmap', icon: Map, label: 'Дорожная карта' },
-  ],
-  client: [
-    { to: '/c', icon: Heart, label: 'Мой путь', end: true },
-    { to: '/c/insights', icon: Lightbulb, label: 'Инсайты' },
-    { to: '/c/homework', icon: ClipboardCheck, label: 'Задания' },
-    { to: '/c/agreements', icon: Handshake, label: 'Договорённости' },
-    { to: '/c/progress', icon: TrendingUp, label: 'Прогресс' },
-    { to: '/c/checkin', icon: ClipboardList, label: 'Чек-ин' },
-    { to: '/c/safety', icon: ShieldCheck, label: 'Поддержка' },
   ],
   admin: [
     { to: '/a', icon: Shield, label: 'Админ-панель', end: true },
   ],
 } as const
 
-const roleNames = { therapist: 'Терапевт', client: 'Клиент', admin: 'Администратор' }
+const roleNames = { therapist: 'Терапевт', admin: 'Администратор' }
 
-export function AppShell({ children, role }: { children: ReactNode; role: 'therapist' | 'client' | 'admin' }) {
+export function AppShell({ children, role }: { children: ReactNode; role: 'therapist' | 'admin' }) {
   const { me, refreshAll } = useApp()
   const navigate = useNavigate()
   const logoutMut = trpc.auth.logout.useMutation({
@@ -47,9 +38,8 @@ export function AppShell({ children, role }: { children: ReactNode; role: 'thera
     label: string
     end?: boolean
   }>
-  if (role === 'therapist' && me?.isPlatformOwner) {
-    nav.push({ to: '/a', icon: Shield, label: 'Управление платформой' })
-  }
+  // "Управление платформой" is an admin/owner-only function and must never
+  // appear in the therapist cabinet's own nav, even for a hybrid account.
   if (role === 'admin' && me?.role === 'therapist') {
     nav.push({ to: '/t', icon: Heart, label: 'Кабинет терапевта', end: true })
   }

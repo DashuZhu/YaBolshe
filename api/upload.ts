@@ -2,18 +2,20 @@ import { mkdir, open, unlink } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { eq, and } from "drizzle-orm";
 import { getDb } from "./queries/connection";
-import { sessions } from "@db/schema";
+import { sessions, sessionFiles } from "@db/schema";
 import { findUserByToken, readCookie, SESSION_COOKIE } from "./auth/session";
-import { enqueueSession } from "./ai/pipeline";
 import { logAudit } from "./queries/audit";
 
 const UPLOAD_DIR = () => process.env.UPLOAD_DIR ?? join(process.cwd(), "data", "uploads");
 const MAX_BYTES = () => Number(process.env.MAX_UPLOAD_MB ?? 500) * 1024 * 1024;
-const ALLOWED_EXT = new Set([
+const AUDIO_VIDEO_EXT = new Set([
   ".mp3", ".wav", ".m4a", ".aac", ".flac", ".opus", ".ogg",
   ".mp4", ".mov", ".mkv", ".avi", ".mpeg", ".mpga", ".webm",
   ".3gp", ".3g2", ".ts", ".mts", ".m2ts",
 ]);
+const TEXT_EXT = new Set([".txt"]);
+
+type SpeakerHint = "therapist" | "client" | "unknown";
 
 function uploadFileName(req: Request): string {
   const encoded = req.headers.get("x-filename") ?? "";
@@ -22,6 +24,11 @@ function uploadFileName(req: Request): string {
   } catch {
     return encoded;
   }
+}
+
+function speakerHintFromHeader(req: Request): SpeakerHint {
+  const raw = req.headers.get("x-speaker-hint");
+  return raw === "therapist" || raw === "client" ? raw : "unknown";
 }
 
 async function streamRequestToFile(req: Request, fullPath: string): Promise<number> {
@@ -80,14 +87,21 @@ export async function handleUpload(req: Request): Promise<Response> {
       return Response.json({ error: "Имя файла не передано" }, { status: 400 });
     }
     const ext = extname(fileName).toLowerCase();
-    if (!ALLOWED_EXT.has(ext)) {
+    const kind: "audio_video" | "text" | null = AUDIO_VIDEO_EXT.has(ext)
+      ? "audio_video"
+      : TEXT_EXT.has(ext)
+        ? "text"
+        : null;
+    if (!kind) {
       return Response.json(
-        { error: `Формат ${ext || "без расширения"} не поддерживается. Выберите обычный аудио- или видеофайл.` },
+        {
+          error: `Формат ${ext || "без расширения"} не поддерживается. Загрузите аудио/видео запись или текстовый файл расшифровки (.txt).`,
+        },
         { status: 400 },
       );
     }
     await mkdir(UPLOAD_DIR(), { recursive: true });
-    const safeName = `session-${sessionId}-${Date.now()}${ext}`;
+    const safeName = `session-${sessionId}-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
     const fullPath = join(UPLOAD_DIR(), safeName);
     let size = 0;
     try {
@@ -105,23 +119,24 @@ export async function handleUpload(req: Request): Promise<Response> {
       throw err;
     }
 
-    await db
-      .update(sessions)
-      .set({
-        hasMedia: true,
-        mediaPath: fullPath,
-        mediaSizeBytes: size,
-        status: "queued",
-      })
-      .where(eq(sessions.id, sessionId));
+    await db.insert(sessionFiles).values({
+      sessionId,
+      kind,
+      speakerHint: speakerHintFromHeader(req),
+      filePath: fullPath,
+      originalName: fileName,
+      sizeBytes: size,
+    });
+
+    if (kind === "audio_video") {
+      await db.update(sessions).set({ hasMedia: true }).where(eq(sessions.id, sessionId));
+    }
 
     await logAudit(user.id, user.firstName, "session.upload", "session", String(sessionId), {
       fileName,
       sizeBytes: size,
+      kind,
     });
-
-    // fire-and-forget async processing
-    enqueueSession(sessionId);
 
     return Response.json({ ok: true, sessionId });
   } catch (err) {

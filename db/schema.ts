@@ -87,6 +87,9 @@ export const clientProfiles = mysqlTable("client_profiles", {
   focus: varchar("focus", { length: 255 }).notNull().default(""),
   avatarHue: int("avatar_hue").notNull().default(320),
   aiConsent: boolean("ai_consent").notNull().default(false),
+  // real address to email session materials to — separate from the internal
+  // placeholder users.email, which the client never sees or logs in with
+  contactEmail: varchar("contact_email", { length: 320 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -131,8 +134,20 @@ export const sessions = mysqlTable("sessions", {
   // transcript: array of segments [{id,start,end,speaker,text,confidence}]
   transcriptJson: json("transcript_json"),
   // AI analysis fields
+  // short (3-5 sentence) internal digest used only to prime the next
+  // session's analysis with prior-session context — never shown as-is
   summaryShort: text("summary_short"),
+  // the maximally detailed session write-up: shown to the therapist and the
+  // client on the "Для клиента" tab, editable before sending
   clientFriendlySummary: text("client_friendly_summary"),
+  // warm, client-safe note on what's shifting — its own "Динамика" section
+  // on the client-facing tab, never the therapist's clinical reasoning
+  clientProgressNote: text("client_progress_note"),
+  // therapist-only prose analysis of feelings shown and needs behind them
+  emotionsNeedsAnalysis: text("emotions_needs_analysis"),
+  // therapist-only 360° cross-approach case analysis backing the
+  // "Вопросы и гипотезы" tab
+  caseAnalysis: text("case_analysis"),
   emotionsJson: json("emotions_json"),
   needsJson: json("needs_json"),
   patternsJson: json("patterns_json"),
@@ -146,6 +161,20 @@ export const sessions = mysqlTable("sessions", {
   outputTokens: int("output_tokens").notNull().default(0),
   approvedAt: timestamp("approved_at"),
   sentAt: timestamp("sent_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// One or more raw materials attached to a session (multiple synced audio
+// tracks of the same conversation, or a single ready-made text transcript).
+// The pipeline turns all rows for one session into a single transcript.
+export const sessionFiles = mysqlTable("session_files", {
+  id: serial("id").primaryKey(),
+  sessionId: bigint("session_id", { mode: "number", unsigned: true }).notNull(),
+  kind: mysqlEnum("kind", ["audio_video", "text"]).notNull(),
+  speakerHint: mysqlEnum("speaker_hint", ["therapist", "client", "unknown"]).notNull().default("unknown"),
+  filePath: varchar("file_path", { length: 512 }).notNull(),
+  originalName: varchar("original_name", { length: 255 }).notNull(),
+  sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -235,6 +264,22 @@ export const roadmaps = mysqlTable("roadmaps", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// Cross-session client-level analysis: a standing psychological portrait plus
+// dynamics-over-time, recomputed every 4 analyzed sessions (not on every
+// single session) from the client's accumulated history. Lives on the
+// client's own page, separate from any one session's own analysis tabs.
+export const clientAnalysis = mysqlTable("client_analysis", {
+  id: serial("id").primaryKey(),
+  clientId: bigint("client_id", { mode: "number", unsigned: true }).notNull().unique(),
+  portraitSummary: text("portrait_summary"),
+  dynamicsSummary: text("dynamics_summary"),
+  recurringThemesJson: json("recurring_themes_json"),
+  avoidedByClientJson: json("avoided_by_client_json"),
+  avoidedByTherapistJson: json("avoided_by_therapist_json"),
+  sessionsAnalyzed: int("sessions_analyzed").notNull().default(0),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 export const therapistNotes = mysqlTable("therapist_notes", {
   id: serial("id").primaryKey(),
   therapistId: bigint("therapist_id", { mode: "number", unsigned: true }).notNull(),
@@ -288,11 +333,13 @@ export type AccountInvite = typeof accountInvites.$inferSelect;
 export type ClientProfile = typeof clientProfiles.$inferSelect;
 export type Invite = typeof invites.$inferSelect;
 export type SessionRow = typeof sessions.$inferSelect;
+export type SessionFileRow = typeof sessionFiles.$inferSelect;
 export type InsightRow = typeof insights.$inferSelect;
 export type ThemeRow = typeof themes.$inferSelect;
 export type HomeworkRow = typeof homework.$inferSelect;
 export type AgreementRow = typeof agreements.$inferSelect;
 export type RoadmapRow = typeof roadmaps.$inferSelect;
+export type ClientAnalysisRow = typeof clientAnalysis.$inferSelect;
 export type TherapistNoteRow = typeof therapistNotes.$inferSelect;
 export type CheckInRow = typeof checkIns.$inferSelect;
 export type AuditLogRow = typeof auditLogs.$inferSelect;

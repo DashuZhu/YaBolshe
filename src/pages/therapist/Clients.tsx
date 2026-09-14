@@ -1,6 +1,6 @@
-import { Link } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { useState } from 'react'
-import { UserPlus, Archive, Search, Copy, Check, X } from 'lucide-react'
+import { UserRoundPlus, Archive, Search, X, Sparkles } from 'lucide-react'
 import { AppShell } from '@/components/shell'
 import { GlassCard, Avatar } from '@/components/brand'
 import { Pill } from '@/components/widgets'
@@ -9,33 +9,46 @@ import { cn } from '@/lib/utils'
 import { friendlyApiError } from '@/lib/errors'
 
 export default function Clients() {
+  const navigate = useNavigate()
   const [tab, setTab] = useState<'active' | 'archived'>('active')
   const [query, setQuery] = useState('')
-  const [inviteOpen, setInviteOpen] = useState(false)
-  const [email, setEmail] = useState('')
-  const [focus, setFocus] = useState('')
-  const [inviteCode, setInviteCode] = useState<{ code: string; email: string | null; expiresAt: string } | null>(null)
-  const [copied, setCopied] = useState(false)
+
+  const [addOpen, setAddOpen] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newFocus, setNewFocus] = useState('')
+  const [newEmail, setNewEmail] = useState('')
+  const [newConsent, setNewConsent] = useState(false)
+
+  const [reprocessConfirmOpen, setReprocessConfirmOpen] = useState(false)
+  const [reprocessResult, setReprocessResult] = useState<{ queued: number; skippedSent: number; skippedProcessing: number; skippedNoMaterial: number } | null>(null)
 
   const clientsQ = useClients()
   const statsQ = useTherapistStats()
-  const inviteMut = trpc.clients.createInvite.useMutation({
-    onSuccess: (r) => setInviteCode(r),
+  const utils = trpc.useUtils()
+  const addClientMut = trpc.clients.createManual.useMutation({
+    onSuccess: (r) => {
+      void utils.clients.list.invalidate()
+      void utils.clients.stats.invalidate()
+      setAddOpen(false)
+      setNewName('')
+      setNewFocus('')
+      setNewEmail('')
+      setNewConsent(false)
+      navigate(`/t/clients/${r.id}`)
+    },
+  })
+  const reprocessAllMut = trpc.sessions.reprocessAllEligible.useMutation({
+    onSuccess: (r) => {
+      setReprocessConfirmOpen(false)
+      setReprocessResult(r)
+      void utils.sessions.list.invalidate()
+      void utils.clients.list.invalidate()
+    },
   })
 
   const list = (clientsQ.data ?? [])
     .filter((c) => c.status === tab)
     .filter((c) => c.name.toLowerCase().includes(query.toLowerCase()))
-
-  const copy = async () => {
-    if (!inviteCode) return
-    try {
-      const url = `${window.location.origin}/#/login?mode=client&invite=${encodeURIComponent(inviteCode.code)}`
-      await navigator.clipboard.writeText(url)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    } catch { /* clipboard unavailable */ }
-  }
 
   return (
     <AppShell role="therapist">
@@ -46,72 +59,127 @@ export default function Clients() {
             Активные: {statsQ.data?.activeClients ?? '…'} / {statsQ.data?.maxClients ?? 20} · можно архивировать, чтобы освободить место
           </p>
         </div>
-        <button
-          onClick={() => { setInviteOpen(true); setInviteCode(null) }}
-          className="btn-soft flex items-center gap-2 rounded-2xl px-6 py-3 text-sm font-bold text-brand-deep"
-        >
-          <UserPlus className="h-5 w-5" />
-          Пригласить в кабинет
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => setAddOpen(true)}
+            className="btn-3d flex items-center gap-2 rounded-2xl px-6 py-3 text-sm font-bold text-white"
+          >
+            <UserRoundPlus className="h-5 w-5" />
+            Добавить клиента
+          </button>
+          <button
+            onClick={() => { setReprocessConfirmOpen(true); setReprocessResult(null) }}
+            className="btn-soft flex items-center gap-2 rounded-2xl px-6 py-3 text-sm font-bold text-brand-deep"
+          >
+            <Sparkles className="h-5 w-5" />
+            Переанализировать по новым промптам
+          </button>
+        </div>
       </div>
 
-      {/* Invite modal */}
-      {inviteOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-deep/30 p-4 backdrop-blur-sm" onClick={() => setInviteOpen(false)}>
-          <GlassCard deep className="w-full max-w-md" >
+      {reprocessResult && (
+        <div className="mb-6 rounded-2xl border border-brand-lav/40 bg-brand-lav/10 px-4 py-3 text-sm text-brand-deep">
+          Отправлено на переанализ: {reprocessResult.queued}.
+          {reprocessResult.skippedSent > 0 && ` Пропущено (уже у клиента): ${reprocessResult.skippedSent}.`}
+          {reprocessResult.skippedProcessing > 0 && ` Уже в обработке: ${reprocessResult.skippedProcessing}.`}
+          {reprocessResult.skippedNoMaterial > 0 && ` Без исходного материала (запись удалена для приватности): ${reprocessResult.skippedNoMaterial}.`}
+        </div>
+      )}
+
+      {/* Reprocess-all confirm modal */}
+      {reprocessConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-deep/30 p-4 backdrop-blur-sm" onClick={() => setReprocessConfirmOpen(false)}>
+          <GlassCard deep className="w-full max-w-md">
             <div onClick={(e) => e.stopPropagation()}>
               <div className="mb-4 flex items-start justify-between">
-                <div>
-                  <h2 className="text-lg font-extrabold text-brand-deep">Приглашение клиента</h2>
-                  <p className="mt-1 text-sm text-brand-mute">
-                    Приглашение привяжет клиента только к вашему кабинету. Почта защищает ссылку от передачи другому человеку.
-                  </p>
-                </div>
-                <button onClick={() => setInviteOpen(false)} className="btn-soft rounded-xl p-2" aria-label="Закрыть">
+                <h2 className="text-lg font-extrabold text-brand-deep">Переанализировать сессии?</h2>
+                <button onClick={() => setReprocessConfirmOpen(false)} className="btn-soft rounded-xl p-2" aria-label="Закрыть">
                   <X className="h-4 w-4 text-brand-deep" />
                 </button>
               </div>
-              {!inviteCode ? (
+              <p className="text-sm leading-relaxed text-brand-mute">
+                Все сессии, которые ещё не отправлены клиентам и у которых сохранился исходный материал, будут заново
+                разобраны AI по обновлённому промпту. Текущие инсайты, темы, задания и договорённости этих сессий
+                будут удалены и пересозданы как неподтверждённые черновики — их снова нужно будет проверить и подтвердить.
+                Уже отправленные клиентам сессии не трогаются.
+              </p>
+              <div className="mt-5 flex justify-end gap-2">
+                <button onClick={() => setReprocessConfirmOpen(false)} className="btn-soft rounded-2xl px-5 py-2.5 text-sm font-bold text-brand-deep">
+                  Отмена
+                </button>
+                <button
+                  onClick={() => reprocessAllMut.mutate()}
+                  disabled={reprocessAllMut.isPending}
+                  className="btn-3d rounded-2xl px-5 py-2.5 text-sm font-bold text-white disabled:opacity-50"
+                >
+                  {reprocessAllMut.isPending ? 'Запускаем…' : 'Да, переанализировать'}
+                </button>
+              </div>
+              {reprocessAllMut.error && (
+                <p className="mt-3 rounded-2xl bg-brand-danger/10 px-4 py-3 text-sm font-semibold text-red-700">
+                  {friendlyApiError(reprocessAllMut.error.message)}
+                </p>
+              )}
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* Add client modal */}
+      {addOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-deep/30 p-4 backdrop-blur-sm" onClick={() => setAddOpen(false)}>
+          <GlassCard deep className="w-full max-w-md">
+            <div onClick={(e) => e.stopPropagation()}>
+              <div className="mb-4 flex items-start justify-between">
                 <div>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="Почта клиента"
-                    className="mb-3 w-full rounded-2xl border border-brand-softpink/60 bg-white/80 px-4 py-3 text-sm outline-none placeholder:text-brand-mute/60 focus:ring-2 focus:ring-brand-lav"
-                  />
-                  <input
-                    value={focus}
-                    onChange={(e) => setFocus(e.target.value)}
-                    placeholder="Запрос / фокус (необязательно): например, «тревога»"
-                    className="w-full rounded-2xl border border-brand-softpink/60 bg-white/80 px-4 py-3 text-sm outline-none placeholder:text-brand-mute/60 focus:ring-2 focus:ring-brand-lav"
-                  />
-                  <button
-                    onClick={() => inviteMut.mutate({ email: email.trim(), focus })}
-                    disabled={inviteMut.isPending || !email.trim()}
-                    className="btn-3d mt-4 w-full rounded-2xl py-3 text-sm font-bold text-white"
-                  >
-                    {inviteMut.isPending ? 'Создаём…' : 'Создать код приглашения'}
-                  </button>
-                  {inviteMut.error && (
-                    <p className="mt-3 rounded-2xl bg-brand-danger/10 px-4 py-3 text-sm font-semibold text-red-700">
-                      {friendlyApiError(inviteMut.error.message)}
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <div className="text-center">
-                  <p className="text-xs font-bold uppercase tracking-wide text-brand-mute">код приглашения</p>
-                  <p className="mt-2 rounded-2xl bg-brand-lav/20 py-4 text-3xl font-extrabold tracking-[0.3em] text-brand-deep">
-                    {inviteCode.code}
+                  <h2 className="text-lg font-extrabold text-brand-deep">Новый клиент</h2>
+                  <p className="mt-1 text-sm text-brand-mute">
+                    Заведите карточку клиента, а затем прикрепите к ней записи и материалы сессий.
                   </p>
-                  <p className="mt-2 text-xs text-brand-mute">действует до {inviteCode.expiresAt}</p>
-                  {inviteCode.email && <p className="mt-1 text-xs text-brand-mute">только для {inviteCode.email}</p>}
-                  <button onClick={copy} className="btn-soft mx-auto mt-4 flex items-center gap-2 rounded-2xl px-6 py-2.5 text-sm font-bold text-brand-deep">
-                    {copied ? <Check className="h-4 w-4 text-brand-success" /> : <Copy className="h-4 w-4" />}
-                    {copied ? 'Скопировано' : 'Скопировать ссылку'}
-                  </button>
                 </div>
+                <button onClick={() => setAddOpen(false)} className="btn-soft rounded-xl p-2" aria-label="Закрыть">
+                  <X className="h-4 w-4 text-brand-deep" />
+                </button>
+              </div>
+              <input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="Имя клиента"
+                className="mb-3 w-full rounded-2xl border border-brand-softpink/60 bg-white/80 px-4 py-3 text-sm outline-none placeholder:text-brand-mute/60 focus:ring-2 focus:ring-brand-lav"
+              />
+              <input
+                value={newFocus}
+                onChange={(e) => setNewFocus(e.target.value)}
+                placeholder="Запрос / фокус (необязательно): например, «тревога»"
+                className="mb-3 w-full rounded-2xl border border-brand-softpink/60 bg-white/80 px-4 py-3 text-sm outline-none placeholder:text-brand-mute/60 focus:ring-2 focus:ring-brand-lav"
+              />
+              <input
+                type="email"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                placeholder="Почта клиента (куда отправлять материалы сессий)"
+                className="w-full rounded-2xl border border-brand-softpink/60 bg-white/80 px-4 py-3 text-sm outline-none placeholder:text-brand-mute/60 focus:ring-2 focus:ring-brand-lav"
+              />
+              <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-2xl bg-brand-lav/10 p-4 text-xs leading-relaxed text-brand-ink">
+                <input
+                  type="checkbox"
+                  checked={newConsent}
+                  onChange={(e) => setNewConsent(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-brand-violet"
+                />
+                <span>Клиент согласился на обработку записей сессий и создание черновых материалов.</span>
+              </label>
+              <button
+                onClick={() => addClientMut.mutate({ name: newName.trim(), focus: newFocus.trim(), contactEmail: newEmail.trim(), aiConsent: true })}
+                disabled={!newName.trim() || !newConsent || addClientMut.isPending}
+                className="btn-3d mt-4 w-full rounded-2xl py-3 text-sm font-bold text-white disabled:opacity-50"
+              >
+                {addClientMut.isPending ? 'Создаём…' : 'Добавить клиента'}
+              </button>
+              {addClientMut.error && (
+                <p className="mt-3 rounded-2xl bg-brand-danger/10 px-4 py-3 text-sm font-semibold text-red-700">
+                  {friendlyApiError(addClientMut.error.message)}
+                </p>
               )}
             </div>
           </GlassCard>
@@ -185,7 +253,7 @@ export default function Clients() {
       </div>
       {clientsQ.data && list.length === 0 && (
         <p className="mt-8 text-center text-sm text-brand-mute">
-          {tab === 'active' ? 'Пока нет клиентов — загрузите запись или пригласите клиента в кабинет.' : 'Архив пуст.'}
+          {tab === 'active' ? 'Пока нет клиентов — добавьте первого или загрузите запись сессии.' : 'Архив пуст.'}
         </p>
       )}
     </AppShell>
